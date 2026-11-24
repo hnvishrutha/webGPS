@@ -154,8 +154,8 @@ def transcribe():
     """
     eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
 
-    # If live audio file provided and key exists
-    if not MOCK_MODE and eleven_key and "audio" in request.files:
+    # If live audio file provided and key exists, call ElevenLabs STT
+    if eleven_key and "audio" in request.files:
         audio_file = request.files["audio"]
         try:
             headers = {"xi-api-key": eleven_key}
@@ -329,7 +329,7 @@ def text_to_speech():
     eleven_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM").strip()
 
-    if not MOCK_MODE and eleven_key and text:
+    if eleven_key and text:
         try:
             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             headers = {

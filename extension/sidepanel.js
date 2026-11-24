@@ -708,8 +708,31 @@ document.addEventListener("DOMContentLoaded", () => {
   // STEP 8: TEXT-TO-SPEECH (TTS) STEP READOUT
   // =========================================================================
 
-  function speakText(text) {
+  async function speakText(text) {
     if (!text) return;
+
+    // 1. Attempt high-fidelity ElevenLabs TTS from backend first
+    try {
+      const res = await fetch(`${BACKEND_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      });
+      if (res.ok) {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("audio")) {
+          const blob = await res.blob();
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          await audio.play();
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("ElevenLabs TTS backend fetch note, using browser speech:", e);
+    }
+
+    // 2. Fallback to browser SpeechSynthesis
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
