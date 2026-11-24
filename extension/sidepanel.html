@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGPS Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- Header with Brand & Mode Status -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">WebGPS</span>
+        <span class="brand-subtitle">AI Navigation & Voice Fill</span>
+      </div>
+    </div>
+    <div class="mode-pill" id="modePill" title="Operating in offline Mock Mode">
+      <span class="mode-dot"></span>
+      <span class="mode-text">Mock Mode</span>
+    </div>
+  </header>
+
+  <!-- Safety & Security Banner -->
+  <section class="safety-banner safe" id="safetyBanner">
+    <div class="safety-icon" id="safetyIcon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+    </div>
+    <div class="safety-content">
+      <div class="safety-title" id="safetyTitle">Privacy Shield Active</div>
+      <div class="safety-desc" id="safetyDesc">Values are never read. Sensitive fields protected.</div>
+    </div>
+  </section>
+
+  <!-- Goal Input Section -->
+  <section class="card goal-card">
+    <label for="goalInput" class="section-label">Your Goal</label>
+    <div class="goal-input-wrapper">
+      <input
+        type="text"
+        id="goalInput"
+        class="goal-input"
+        placeholder="e.g., Apply for Civic Digital Pass"
+        value="Apply for Civic Digital Pass"
+      />
+    </div>
+    <div class="action-buttons">
+      <button class="btn btn-primary" id="scanBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>Scan Page Elements</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Stats Counter Bar -->
+  <section class="stats-bar" id="statsBar" style="display: none;">
+    <div class="stat-item">
+      <span class="stat-num" id="totalCount">0</span>
+      <span class="stat-lbl">Elements</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num" id="inViewCount">0</span>
+      <span class="stat-lbl">In Viewport</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-num text-warning" id="sensitiveCount">0</span>
+      <span class="stat-lbl">Sensitive</span>
+    </div>
+  </section>
+
+  <!-- Elements List Section -->
+  <section class="elements-section">
+    <div class="section-header">
+      <h3 class="section-title">Discovered Interactive Elements</h3>
+      <span class="element-filter-badge" id="pageTitleBadge">Ready to scan</span>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+      </div>
+      <p class="empty-text">Click <strong>Scan Page Elements</strong> to inspect the current webpage and number interactive items.</p>
+    </div>
+
+    <!-- Dynamic List Container -->
+    <div class="elements-list" id="elementsList" style="display: none;"></div>
+  </section>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

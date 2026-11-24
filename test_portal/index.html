@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Civic Services Portal - Official Digital Gateway</title>
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --primary-hover: #172554;
+      --secondary: #0d9488;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --warning: #b45309;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+    }
+
+    .top-strip {
+      background: #0f172a;
+      color: #cbd5e1;
+      padding: 6px 24px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .top-strip span { font-weight: 500; }
+    .top-strip a { color: #93c5fd; text-decoration: none; margin-left: 12px; }
+
+    header {
+      background: #ffffff;
+      border-bottom: 2px solid #e2e8f0;
+      padding: 18px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .emblem-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .emblem-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #1e3a8a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: 1px;
+    }
+
+    .portal-info h1 {
+      font-size: 20px;
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+
+    .portal-info p {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    nav {
+      display: flex;
+      gap: 16px;
+    }
+
+    nav a {
+      color: #334155;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+
+    nav a:hover {
+      background: #f1f5f9;
+      color: #1e3a8a;
+    }
+
+    .hero-search {
+      background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+      color: #ffffff;
+      padding: 50px 24px;
+      text-align: center;
+    }
+
+    .hero-search h2 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .hero-search p {
+      font-size: 15px;
+      color: #bfdbfe;
+      margin-bottom: 24px;
+    }
+
+    .search-box-container {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .search-box-container input {
+      flex: 1;
+      padding: 14px 18px;
+      font-size: 15px;
+      border: none;
+      outline: none;
+      color: #1e293b;
+    }
+
+    .search-box-container button {
+      background: #0d9488;
+      color: #ffffff;
+      border: none;
+      padding: 0 24px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .search-box-container button:hover {
+      background: #0f766e;
+    }
+
+    main {
+      max-width: 1040px;
+      margin: 36px auto;
+      padding: 0 20px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 16px;
+      border-left: 4px solid #1e3a8a;
+      padding-left: 10px;
+    }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+      margin-bottom: 36px;
+    }
+
+    .service-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: box-shadow 0.2s, transform 0.1s;
+    }
+
+    .service-card:hover {
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+      transform: translateY(-2px);
+    }
+
+    .service-card h3 {
+      font-size: 16px;
+      color: #1e3a8a;
+      margin-bottom: 8px;
+    }
+
+    .service-card p {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 16px;
+      flex: 1;
+    }
+
+    .btn-apply {
+      display: inline-block;
+      text-align: center;
+      background: #1e3a8a;
+      color: #ffffff;
+      padding: 8px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .btn-apply:hover {
+      background: #172554;
+    }
+
+    footer {
+      background: #0f172a;
+      color: #94a3b8;
+      text-align: center;
+      padding: 24px;
+      font-size: 13px;
+      margin-top: 50px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Gov Strip -->
+  <div class="top-strip">
+    <span>Government of India | Official Civic Digital Pass Demonstration Portal</span>
+    <div>
+      <a href="#accessibility" role="link">Accessibility</a>
+      <a href="#help" role="link">Help Desk</a>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="emblem-title">
+      <div class="emblem-badge">GOI</div>
+      <div class="portal-info">
+        <h1>Civic Digital Portal</h1>
+        <p>National Unified Services & Digital Pass Gateway</p>
+      </div>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="results.html">All Services</a>
+      <a href="form.html">Apply for Pass</a>
+    </nav>
+  </header>
+
+  <!-- Hero Search -->
+  <section class="hero-search">
+    <h2>Find and Apply for Citizen Services</h2>
+    <p>Search over 400 national and state public utilities</p>
+    <form action="results.html" method="GET" class="search-box-container">
+      <input
+        type="search"
+        name="q"
+        placeholder="Type a service e.g. Civic Digital Pass, Identity Verification..."
+        aria-label="Search civic services"
+        value="Civic Digital Pass"
+      />
+      <button type="submit">Search</button>
+    </form>
+  </section>
+
+  <!-- Featured Services -->
+  <main>
+    <h2 class="section-title">Popular Citizen Services</h2>
+    <div class="services-grid">
+      <div class="service-card">
+        <div>
+          <h3>Civic Digital Pass</h3>
+          <p>Obtain an official digital entry pass for municipal facilities and civic centers.</p>
+        </div>
+        <a href="form.html" class="btn-apply" role="button">Apply for Civic Pass</a>
+      </div>
+
+      <div class="service-card">
+        <div>
+          <h3>E-Certificates Verification</h3>
+          <p>Instant verification of domicile, birth, and caste certificates.</p>
+        </div>
+        <a href="results.html?cat=certs" class="btn-apply" role="button">Check Status</a>
+      </div>
+
+      <div class="service-card">
+        <div>
+          <h3>Utility Connection Grievance</h3>
+          <p>Lodge and track complaints regarding civic municipal water and power.</p>
+        </div>
+        <a href="results.html?cat=utility" class="btn-apply" role="button">Track Grievance</a>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 National Informatics Simulation Portal. For demonstration and evaluation purposes.</p>
+  </footer>
+</body>
+</html>
