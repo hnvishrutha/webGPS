@@ -1,7 +1,7 @@
 /**
  * sidepanel.js - WebGPS Side Panel Controller
  *
- * Coordinates scanning requests between the user side panel UI
+ * Coordinates scanning requests and DOM highlighting between the side panel UI
  * and the active webpage content script.
  */
 
@@ -15,6 +15,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const pageTitleBadge = document.getElementById("pageTitleBadge");
   const emptyState = document.getElementById("emptyState");
   const elementsList = document.getElementById("elementsList");
+
+  // Highlighter Controls (Step 3)
+  const manualHighlightInput = document.getElementById("manualHighlightInput");
+  const manualHighlightBtn = document.getElementById("manualHighlightBtn");
+  const activeGuidanceCard = document.getElementById("activeGuidanceCard");
+  const guidanceBadge = document.getElementById("guidanceBadge");
+  const guidanceText = document.getElementById("guidanceText");
+  const guidanceWarning = document.getElementById("guidanceWarning");
+  const clearHighlightBtn = document.getElementById("clearHighlightBtn");
+
+  // Local cache of scanned elements
+  let scannedElements = [];
+  let currentActiveId = null;
 
   /**
    * Retrieves the currently active browser tab.
@@ -32,22 +45,102 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       return await chrome.tabs.sendMessage(tabId, message);
     } catch (err) {
-      // Content script may not be injected yet (e.g. freshly reloaded extension)
       console.log("WebGPS: Injecting content script into tab", tabId);
       await chrome.scripting.executeScript({
         target: { tabId: tabId },
         files: ["content.js"]
       });
-      // Short delay to ensure script initializes
       await new Promise((r) => setTimeout(r, 100));
       return await chrome.tabs.sendMessage(tabId, message);
     }
   }
 
   /**
+   * Highlights element on the live webpage and reflects it in the UI.
+   */
+  async function triggerHighlight(elementId, reasonText) {
+    const tab = await getActiveTab();
+    if (!tab || !tab.id) return;
+
+    const elData = scannedElements.find((e) => e.id === Number(elementId));
+    const isSensitive = elData ? elData.sensitive : false;
+    const label = elData ? elData.label : `Element #${elementId}`;
+    const reason = reasonText || `Proceed with '${label}'`;
+
+    try {
+      const response = await sendContentMessage(tab.id, {
+        action: "HIGHLIGHT_ELEMENT",
+        element_id: Number(elementId),
+        reason: reason
+      });
+
+      if (response && response.success) {
+        currentActiveId = Number(elementId);
+        updateGuidanceCard(currentActiveId, isSensitive, label, reason);
+        highlightCardInList(currentActiveId);
+      } else {
+        console.warn("Highlight failed:", response ? response.error : "Unknown error");
+      }
+    } catch (err) {
+      console.error("Failed to highlight element:", err);
+    }
+  }
+
+  /**
+   * Updates the Active Guidance callout banner in the side panel.
+   */
+  function updateGuidanceCard(id, isSensitive, label, reason) {
+    guidanceBadge.textContent = `#${id} ${isSensitive ? "🔒 Sensitive" : "Target"}`;
+
+    if (isSensitive) {
+      activeGuidanceCard.classList.add("is-sensitive-active");
+      guidanceText.textContent = `WebGPS located sensitive field: "${label}".`;
+      guidanceWarning.style.display = "flex";
+    } else {
+      activeGuidanceCard.classList.remove("is-sensitive-active");
+      guidanceText.textContent = reason || `Click on "${label}" to proceed towards your goal.`;
+      guidanceWarning.style.display = "none";
+    }
+
+    activeGuidanceCard.style.display = "block";
+  }
+
+  /**
+   * Clears any active highlight on page and resets UI.
+   */
+  async function clearActiveHighlight() {
+    const tab = await getActiveTab();
+    if (tab && tab.id) {
+      try {
+        await sendContentMessage(tab.id, { action: "CLEAR_HIGHLIGHT" });
+      } catch (e) {
+        // Ignore
+      }
+    }
+    activeGuidanceCard.style.display = "none";
+    currentActiveId = null;
+    document.querySelectorAll(".element-card.is-active").forEach((c) => c.classList.remove("is-active"));
+  }
+
+  /**
+   * Highlights the corresponding card in the side panel list.
+   */
+  function highlightCardInList(id) {
+    document.querySelectorAll(".element-card").forEach((card) => {
+      if (Number(card.dataset.id) === Number(id)) {
+        card.classList.add("is-active");
+        card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } else {
+        card.classList.remove("is-active");
+      }
+    });
+  }
+
+  /**
    * Renders the scanned elements into the side panel card list.
    */
   function renderElements(elements, pageTitle) {
+    scannedElements = elements || [];
     elementsList.innerHTML = "";
 
     if (!elements || elements.length === 0) {
@@ -77,6 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.forEach((el) => {
       const card = document.createElement("div");
       card.className = `element-card ${el.sensitive ? "is-sensitive" : ""}`;
+      card.dataset.id = el.id;
 
       const badge = document.createElement("div");
       badge.className = "element-badge";
@@ -121,13 +215,19 @@ document.addEventListener("DOMContentLoaded", () => {
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
-          <span>Sensitive field (value protected)</span>
+          <span>Sensitive (Protected from AI/voice fill)</span>
         `;
         details.appendChild(sensitiveIndicator);
       }
 
       card.appendChild(badge);
       card.appendChild(details);
+
+      // Click card to highlight this element on the page
+      card.addEventListener("click", () => {
+        triggerHighlight(el.id);
+      });
+
       elementsList.appendChild(card);
     });
 
@@ -139,6 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
    * Action: Scan Current Page Elements
    */
   async function handleScan() {
+    clearActiveHighlight();
     scanBtn.disabled = true;
     scanBtn.innerHTML = `
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin">
@@ -156,7 +257,6 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No active browser tab found.");
       }
 
-      // Disallow scanning restricted internal browser pages
       if (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://") || tab.url.startsWith("chrome-extension://")) {
         throw new Error("Chrome extensions cannot scan internal browser pages. Please open any web page or localhost.");
       }
@@ -188,5 +288,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Manual Highlight button trigger
+  manualHighlightBtn.addEventListener("click", () => {
+    const val = parseInt(manualHighlightInput.value, 10);
+    if (!isNaN(val) && val > 0) {
+      triggerHighlight(val);
+    }
+  });
+
+  manualHighlightInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const val = parseInt(manualHighlightInput.value, 10);
+      if (!isNaN(val) && val > 0) {
+        triggerHighlight(val);
+      }
+    }
+  });
+
+  clearHighlightBtn.addEventListener("click", clearActiveHighlight);
   scanBtn.addEventListener("click", handleScan);
 });

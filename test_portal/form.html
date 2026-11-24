@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Civic Digital Pass Application - Official Portal</title>
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --primary-hover: #172554;
+      --secondary: #0d9488;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --warning: #b45309;
+      --warning-bg: #fef3c7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.5;
+    }
+
+    .top-strip {
+      background: #0f172a;
+      color: #cbd5e1;
+      padding: 6px 24px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .top-strip span { font-weight: 500; }
+    .top-strip a { color: #93c5fd; text-decoration: none; margin-left: 12px; }
+
+    header {
+      background: #ffffff;
+      border-bottom: 2px solid #e2e8f0;
+      padding: 18px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .emblem-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .emblem-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #1e3a8a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: 1px;
+    }
+
+    .portal-info h1 {
+      font-size: 20px;
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+
+    .portal-info p {
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    nav {
+      display: flex;
+      gap: 16px;
+    }
+
+    nav a {
+      color: #334155;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+
+    nav a:hover {
+      background: #f1f5f9;
+      color: #1e3a8a;
+    }
+
+    main {
+      max-width: 800px;
+      margin: 36px auto;
+      padding: 0 20px;
+    }
+
+    .form-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 32px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+
+    .form-header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .form-header h2 {
+      font-size: 22px;
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+
+    .form-header p {
+      color: var(--text-muted);
+      font-size: 13.5px;
+      margin-top: 4px;
+    }
+
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    legend {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e3a8a;
+      padding: 0 8px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+
+    .required-star {
+      color: #dc2626;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #ffffff;
+      color: #1e293b;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: #1e3a8a;
+      box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.15);
+    }
+
+    .sensitive-notice {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--warning);
+      margin-top: 5px;
+      font-weight: 500;
+    }
+
+    .btn-submit {
+      background: #1e3a8a;
+      color: #ffffff;
+      border: none;
+      padding: 12px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      width: 100%;
+    }
+
+    .btn-submit:hover {
+      background: #172554;
+    }
+
+    .confirmation-banner {
+      display: none;
+      background: #ecfdf5;
+      border: 1px solid #10b981;
+      color: #065f46;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 20px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    footer {
+      background: #0f172a;
+      color: #94a3b8;
+      text-align: center;
+      padding: 24px;
+      font-size: 13px;
+      margin-top: 50px;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-strip">
+    <span>Government of India | Official Civic Digital Pass Demonstration Portal</span>
+    <div>
+      <a href="index.html">Home</a>
+      <a href="#help">Help Desk</a>
+    </div>
+  </div>
+
+  <header>
+    <div class="emblem-title">
+      <div class="emblem-badge">GOI</div>
+      <div class="portal-info">
+        <h1>Civic Digital Portal</h1>
+        <p>National Unified Services & Digital Pass Gateway</p>
+      </div>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="form.html">Apply for Pass</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="form-card">
+      <div class="form-header">
+        <h2>Civic Digital Pass Application Form</h2>
+        <p>Please enter your applicant details. Use WebGPS voice assistance to fill fields automatically.</p>
+      </div>
+
+      <form id="passForm" onsubmit="event.preventDefault(); document.getElementById('successMsg').style.display = 'block';">
+        <!-- Section 1: Non-Sensitive Personal Details -->
+        <fieldset>
+          <legend>Applicant Information</legend>
+          <div class="form-group">
+            <label for="applicant_name">Full Name <span class="required-star">*</span></label>
+            <input
+              type="text"
+              id="applicant_name"
+              name="applicant_name"
+              placeholder="e.g. Meera Nair"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="applicant_email">Email Address <span class="required-star">*</span></label>
+            <input
+              type="email"
+              id="applicant_email"
+              name="applicant_email"
+              placeholder="e.g. meera@example.com"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="pass_category">Citizen Category <span class="required-star">*</span></label>
+            <select id="pass_category" name="pass_category" required>
+              <option value="">-- Select Category --</option>
+              <option value="General">General</option>
+              <option value="Senior Citizen">Senior Citizen</option>
+              <option value="Student">Student</option>
+              <option value="Healthcare Worker">Healthcare Worker</option>
+            </select>
+          </div>
+        </fieldset>
+
+        <!-- Section 2: Sensitive Verification (Demonstrating Privacy Guard) -->
+        <fieldset>
+          <legend>Confidential Verification (Human-Only)</legend>
+          <div class="form-group">
+            <label for="aadhaar_num">Aadhaar Number (12 digits) <span class="required-star">*</span></label>
+            <input
+              type="text"
+              id="aadhaar_num"
+              name="aadhaar_num"
+              placeholder="XXXX-XXXX-XXXX"
+              autocomplete="off"
+            />
+            <div class="sensitive-notice">🔒 Sensitive field: Protected from voice autofill and AI reading.</div>
+          </div>
+
+          <div class="form-group">
+            <label for="security_pin">Security OTP / PIN <span class="required-star">*</span></label>
+            <input
+              type="password"
+              id="security_pin"
+              name="security_pin"
+              placeholder="Enter 6-digit PIN"
+              autocomplete="off"
+            />
+            <div class="sensitive-notice">🔒 Sensitive field: Protected from voice autofill and AI reading.</div>
+          </div>
+        </fieldset>
+
+        <button type="submit" id="submit_btn" class="btn-submit">Submit Application</button>
+      </form>
+
+      <div class="confirmation-banner" id="successMsg">
+        🎉 Application Submitted Successfully! Reference ID: #CP-2026-9481
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 National Informatics Simulation Portal. For demonstration and evaluation purposes.</p>
+  </footer>
+</body>
+</html>

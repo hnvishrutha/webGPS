@@ -1,17 +1,21 @@
 /**
- * content.js - WebGPS Page Scanner & Contract Enforcer
+ * content.js - WebGPS Page Scanner, Highlighter & Contract Enforcer
  *
  * Responsibilities:
- * 1. Scans interactive elements on the page (a, button, input, select, textarea, etc.).
+ * 1. Scans interactive elements on the page.
  * 2. Assigns deterministic integer IDs (1..N).
  * 3. Identifies sensitive fields (passwords, OTPs, CVV, Aadhaar, PAN) and flags them.
  * 4. STRICT PRIVACY HONESTY: Never extracts or leaks input values.
- * 5. Caches element references in window.__webgps_elements for fast highlighting.
+ * 5. Highlights target element N with animated glowing overlay and floating badge.
+ * 6. Supports "Type this one yourself" sensitive field guidance.
  */
 
 (() => {
   // Global reference map: id -> DOM element
   window.__webgps_elements = new Map();
+  let currentHighlightedId = null;
+  let activeOverlayEl = null;
+  let repositionHandler = null;
 
   // Keyword patterns for sensitive fields
   const SENSITIVE_PATTERNS = [
@@ -35,12 +39,10 @@
    * Determines if an element should be treated as sensitive data.
    */
   function isSensitiveElement(el) {
-    // 1. Password input type is always sensitive
     if (el.tagName === "INPUT" && el.type === "password") {
       return true;
     }
 
-    // 2. Check attributes against sensitive keywords
     const attrsToCheck = [
       el.getAttribute("name") || "",
       el.getAttribute("id") || "",
@@ -49,7 +51,6 @@
       el.getAttribute("autocomplete") || ""
     ];
 
-    // Check associated <label> text
     if (el.id) {
       const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (label) attrsToCheck.push(label.textContent || "");
@@ -91,7 +92,6 @@
    * Finds the closest preceding heading or legend for contextual grouping.
    */
   function findNearestGroup(el) {
-    // Check if inside fieldset with legend
     const fieldset = el.closest("fieldset");
     if (fieldset) {
       const legend = fieldset.querySelector("legend");
@@ -100,7 +100,6 @@
       }
     }
 
-    // Search upwards or backward for the nearest heading
     let curr = el;
     while (curr && curr !== document.body) {
       let prev = curr.previousElementSibling;
@@ -124,13 +123,11 @@
    * Extracts clean, descriptive label text without reading input values.
    */
   function getCleanLabel(el) {
-    // 1. Explicit aria-label
     const ariaLabel = el.getAttribute("aria-label");
     if (ariaLabel && ariaLabel.trim()) {
       return ariaLabel.trim().substring(0, 80);
     }
 
-    // 2. Associated label by for="id"
     if (el.id) {
       const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (label && label.textContent.trim()) {
@@ -138,29 +135,24 @@
       }
     }
 
-    // 3. Parent label
     const parentLabel = el.closest("label");
     if (parentLabel && parentLabel.textContent.trim()) {
-      // Clone and remove inputs to get text only
       const clone = parentLabel.cloneNode(true);
       clone.querySelectorAll("input, select, textarea, button").forEach((c) => c.remove());
       const labelText = clone.textContent.trim();
       if (labelText) return labelText.substring(0, 80);
     }
 
-    // 4. Placeholder for inputs
     const placeholder = el.getAttribute("placeholder");
     if (placeholder && placeholder.trim()) {
       return placeholder.trim().substring(0, 80);
     }
 
-    // 5. Button/Link inner text or title
     const innerText = el.innerText || el.textContent || "";
     if (innerText.trim()) {
       return innerText.trim().replace(/\s+/g, " ").substring(0, 80);
     }
 
-    // 6. Title or Name attribute
     const title = el.getAttribute("title");
     if (title && title.trim()) {
       return title.trim().substring(0, 80);
@@ -199,8 +191,8 @@
     for (const el of candidates) {
       if (!isElementVisible(el)) continue;
 
-      // Skip elements that are inside the WebGPS sidepanel iframe/ui itself
-      if (el.closest("#webgps-container, #webgps-badge-layer")) continue;
+      // Skip elements that are part of WebGPS overlays
+      if (el.closest("#webgps-overlay-layer, #webgps-badge-layer")) continue;
 
       const tag = el.tagName.toLowerCase();
       const role = el.getAttribute("role") || (tag === "a" ? "link" : tag === "button" ? "button" : tag);
@@ -210,13 +202,12 @@
       const inView = isInViewport(el);
       const group = findNearestGroup(el);
 
-      // Collect options for select dropdowns (for form filling mapping)
       let options = undefined;
       if (tag === "select") {
         options = Array.from(el.options)
           .map((opt) => opt.text.trim())
           .filter(Boolean)
-          .slice(0, 20); // Cap dropdown options
+          .slice(0, 20);
       }
 
       const elementData = {
@@ -232,12 +223,11 @@
         options: options
       };
 
-      // Store in memory map for later highlighter & filler access
       window.__webgps_elements.set(currentId, el);
       elements.push(elementData);
 
       currentId++;
-      if (elements.length >= 100) break; // Contract cap at 100 elements
+      if (elements.length >= 100) break;
     }
 
     return {
@@ -248,7 +238,164 @@
     };
   }
 
-  // Listen for requests from extension side panel
+  /**
+   * Removes any active highlight overlay from the webpage.
+   */
+  function clearHighlight() {
+    if (activeOverlayEl) {
+      activeOverlayEl.remove();
+      activeOverlayEl = null;
+    }
+    if (repositionHandler) {
+      window.removeEventListener("scroll", repositionHandler, true);
+      window.removeEventListener("resize", repositionHandler, true);
+      repositionHandler = null;
+    }
+    currentHighlightedId = null;
+  }
+
+  /**
+   * Injects CSS animation keyframes for the highlight box into the page.
+   */
+  function ensureHighlightStyles() {
+    if (document.getElementById("webgps-style-block")) return;
+    const style = document.createElement("style");
+    style.id = "webgps-style-block";
+    style.textContent = `
+      @keyframes webgps-pulse-primary {
+        0% { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.4), 0 0 18px rgba(99, 102, 241, 0.5); }
+        50% { box-shadow: 0 0 0 7px rgba(99, 102, 241, 0.15), 0 0 28px rgba(99, 102, 241, 0.7); }
+        100% { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.4), 0 0 18px rgba(99, 102, 241, 0.5); }
+      }
+      @keyframes webgps-pulse-sensitive {
+        0% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.4), 0 0 18px rgba(245, 158, 11, 0.5); }
+        50% { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0.15), 0 0 28px rgba(245, 158, 11, 0.7); }
+        100% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.4), 0 0 18px rgba(245, 158, 11, 0.5); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Highlights element N with a smooth scroll, glowing outline, and floating badge.
+   * If the element is sensitive, uses amber warning styling and notice.
+   */
+  function highlightElement(elementId, reason) {
+    ensureHighlightStyles();
+    clearHighlight();
+
+    // Re-scan if elements cache is empty
+    if (window.__webgps_elements.size === 0) {
+      scanPageElements();
+    }
+
+    const targetEl = window.__webgps_elements.get(Number(elementId));
+    if (!targetEl) {
+      console.warn(`WebGPS: Element ID #${elementId} not found on page.`);
+      return { success: false, error: `Element #${elementId} not found` };
+    }
+
+    const isSensitive = isSensitiveElement(targetEl);
+    currentHighlightedId = elementId;
+
+    // Smoothly scroll the element into view
+    targetEl.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest"
+    });
+
+    // Create the overlay container
+    const overlay = document.createElement("div");
+    overlay.id = "webgps-overlay-layer";
+    overlay.style.cssText = `
+      position: absolute;
+      pointer-events: none;
+      z-index: 2147483645;
+      border-radius: 6px;
+      transition: all 0.15s ease-out;
+      box-sizing: border-box;
+    `;
+
+    if (isSensitive) {
+      overlay.style.border = "3px solid #f59e0b";
+      overlay.style.animation = "webgps-pulse-sensitive 2s infinite";
+    } else {
+      overlay.style.border = "3px solid #6366f1";
+      overlay.style.animation = "webgps-pulse-primary 2s infinite";
+    }
+
+    // Floating Badge
+    const badge = document.createElement("div");
+    badge.style.cssText = `
+      position: absolute;
+      top: -30px;
+      left: -2px;
+      background: ${isSensitive ? "#b45309" : "#4338ca"};
+      color: #ffffff;
+      padding: 3px 9px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      white-space: nowrap;
+      pointer-events: none;
+    `;
+
+    if (isSensitive) {
+      badge.innerHTML = `<span>🔒 #${elementId} Sensitive: Type this yourself</span>`;
+    } else {
+      badge.innerHTML = `<span>📍 #${elementId} ${reason ? reason.substring(0, 45) : "Click here"}</span>`;
+    }
+
+    overlay.appendChild(badge);
+    document.body.appendChild(overlay);
+    activeOverlayEl = overlay;
+
+    // Position updater function
+    function updateOverlayPosition() {
+      if (!targetEl || !overlay) return;
+      const rect = targetEl.getBoundingClientRect();
+      const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+      const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+      // Add a slight 4px padding around target element
+      const padding = 4;
+      overlay.style.left = `${rect.left + scrollX - padding}px`;
+      overlay.style.top = `${rect.top + scrollY - padding}px`;
+      overlay.style.width = `${rect.width + padding * 2}px`;
+      overlay.style.height = `${rect.height + padding * 2}px`;
+
+      // Flip badge below if near top of page
+      if (rect.top < 36) {
+        badge.style.top = `${rect.height + padding * 2 + 4}px`;
+      } else {
+        badge.style.top = `-30px`;
+      }
+    }
+
+    // Immediate position calculation & delay calculation after smooth scroll
+    updateOverlayPosition();
+    setTimeout(updateOverlayPosition, 250);
+    setTimeout(updateOverlayPosition, 500);
+
+    // Keep overlay positioned during user scroll or resize
+    repositionHandler = updateOverlayPosition;
+    window.addEventListener("scroll", repositionHandler, { passive: true, capture: true });
+    window.addEventListener("resize", repositionHandler, { passive: true });
+
+    return {
+      success: true,
+      element_id: elementId,
+      sensitive: isSensitive
+    };
+  }
+
+  // Listen for messages from side panel
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "PING") {
       sendResponse({ status: "PONG" });
@@ -265,7 +412,24 @@
       }
       return true;
     }
+
+    if (message.action === "HIGHLIGHT_ELEMENT") {
+      try {
+        const res = highlightElement(message.element_id, message.reason);
+        sendResponse(res);
+      } catch (err) {
+        console.error("WebGPS Highlight Error:", err);
+        sendResponse({ success: false, error: err.message });
+      }
+      return true;
+    }
+
+    if (message.action === "CLEAR_HIGHLIGHT") {
+      clearHighlight();
+      sendResponse({ success: true });
+      return true;
+    }
   });
 
-  console.log("WebGPS Content Script loaded and active.");
+  console.log("WebGPS Content Script (with Highlighter) loaded and active.");
 })();
