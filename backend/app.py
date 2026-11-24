@@ -236,6 +236,7 @@ def safety_check():
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").lower().strip()
     has_insecure_inputs = data.get("has_insecure_inputs", False)
+    has_payment_signals = data.get("has_payment_signals", False)
 
     findings = []
     level = "ok"
@@ -300,6 +301,15 @@ def safety_check():
             "check": "Sensitive Credential Channel",
             "result": "insecure_form",
             "evidence": "Credentials or payment fields detected over non-TLS form submission."
+        })
+
+    if has_payment_signals:
+        if level != "danger":
+            level = "caution"
+        findings.append({
+            "check": "Payment / Financial Signals",
+            "result": "caution",
+            "evidence": "Payment or transaction signals detected on page. User must verify authority before payment."
         })
 
     return jsonify({

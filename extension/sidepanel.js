@@ -128,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (response && response.success && response.data) {
       renderElements(response.data.elements, response.data.page_title);
       // Run deterministic safety check on page URL and security signals
-      runSafetyCheck(response.data.url, response.data.has_insecure_inputs);
+      runSafetyCheck(response.data.url, response.data.has_insecure_inputs, response.data.has_payment_signals);
       return response.data;
     } else {
       throw new Error(response ? response.error : "Failed to retrieve page scan.");
@@ -138,12 +138,16 @@ document.addEventListener("DOMContentLoaded", () => {
   /**
    * Step 7: Deterministic Safety Check with Evidence
    */
-  async function runSafetyCheck(url, hasInsecureInputs) {
+  async function runSafetyCheck(url, hasInsecureInputs, hasPaymentSignals) {
     try {
       const res = await fetch(`${BACKEND_URL}/safety`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url, has_insecure_inputs: hasInsecureInputs })
+        body: JSON.stringify({
+          url: url,
+          has_insecure_inputs: hasInsecureInputs,
+          has_payment_signals: hasPaymentSignals
+        })
       });
       if (res.ok) {
         const data = await res.json();

@@ -208,15 +208,19 @@
       if (elements.length >= 100) break;
     }
 
-    // Safety flags check
+    // Safety flags check per Section 4 Contract:
+    // Check 2: Payment or insecure signals: card or UPI fields, "pay now", non-HTTPS page, or a password field on non-HTTPS.
     const isHttp = window.location.protocol === "http:" && !window.location.hostname.includes("localhost") && !window.location.hostname.includes("127.0.0.1");
     const hasPasswordOnHttp = isHttp && document.querySelector("input[type='password']") !== null;
+    const pageTextSample = (document.body ? (document.body.innerText || "").substring(0, 3000) : "").toLowerCase();
+    const hasPaymentSignals = /pay now|make payment|upi id|credit card|cvv/i.test(pageTextSample);
 
     return {
       elements: elements,
       page_title: document.title || "Untitled Page",
       url: window.location.href,
       has_insecure_inputs: hasPasswordOnHttp,
+      has_payment_signals: hasPaymentSignals,
       is_http: isHttp,
       timestamp: Date.now()
     };
