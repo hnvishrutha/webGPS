@@ -1,0 +1,22 @@
+{
+  "exact_domains": [
+    "localhost",
+    "127.0.0.1",
+    "civicpass.gov.in",
+    "portal.nic.in",
+    "uidai.gov.in",
+    "incometax.gov.in",
+    "passportindia.gov.in",
+    "services.india.gov.in"
+  ],
+  "allowed_suffixes": [
+    ".gov.in",
+    ".nic.in"
+  ],
+  "known_lookalikes": [
+    "civicpass-portal.com",
+    "civicpass.co",
+    "civic-gov-pass.org",
+    "india-passports-gov.in.co"
+  ]
+}
