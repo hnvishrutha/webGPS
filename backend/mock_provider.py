@@ -2,7 +2,7 @@
 mock_provider.py - WebGPS Mock AI & Speech Provider
 
 Provides deterministic, reliable mock responses for:
-1. /plan: Element picking and navigation reasoning
+1. /plan: Element picking and navigation reasoning with history awareness
 2. /transcribe: Speech-to-text (STT) canned responses
 3. /extract-fields: Form field mapping and normalization
 4. /tts: Text-to-speech fallback indicator
@@ -14,7 +14,6 @@ with 100% reliability, without requiring live API keys or active internet access
 from typing import List, Dict, Any, Optional
 import re
 
-# Standard demo utterance for form-filling
 MOCK_DEMO_UTTERANCE = "My name is Meera Nair, email meera at example dot com, category general"
 
 
@@ -28,10 +27,12 @@ def mock_plan(
 ) -> Dict[str, Any]:
     """
     Mock decision engine for navigation.
-    Picks a valid element ID from the provided elements list based on simple heuristics:
-    1. Looks for elements matching keywords in the goal or common navigation steps.
-    2. Identifies if the element is a final submit/payment step.
-    3. Guarantees that the returned element_id exists in the input elements list.
+    Picks a valid element ID from the provided elements list based on:
+    1. Looking for elements matching keywords in the goal or common navigation steps.
+    2. Prioritizing search boxes, pass application links, or form inputs.
+    3. Respecting history to avoid infinite loops on the same step.
+    4. Identifying if the element is a final submit/payment step.
+    5. Guarantees that the returned element_id exists in the input elements list.
     """
     if not elements:
         return {
@@ -42,49 +43,84 @@ def mock_plan(
         }
 
     goal_lower = (goal or "").lower()
+    history_ids = set()
+    if history:
+        for h in history:
+            if isinstance(h, dict) and "element_id" in h:
+                history_ids.add(h["element_id"])
+            elif isinstance(h, int):
+                history_ids.add(h)
+
     selected_element = None
     reason = "Proceed with this action to reach your goal."
     is_final = False
 
-    # Heuristic 1: If looking for digital pass / civic pass / search
+    # Check for Final Submit or Payment
     for el in elements:
         label = (el.get("label") or "").lower()
-        tag = (el.get("tag") or "").lower()
-        role = (el.get("role") or "").lower()
-
-        # Check for Final Submit or Payment first
         if any(w in label for w in ["submit application", "final submit", "pay now", "make payment", "confirm and submit"]):
+            # If we've already filled or reached the end
             selected_element = el
-            reason = f"You are at the final stage. Review your details and click '{el.get('label')}'."
+            reason = f"You are at the final stage. Review your details and click '{el.get('label')}' to complete submission."
             is_final = True
             break
 
-        # Check for search input
-        if "search" in goal_lower and (tag == "input" or role == "searchbox") and "search" in label:
-            selected_element = el
-            reason = f"Type your search query into '{el.get('label')}' to find civic services."
-            break
-
-        # Check for service/application links
-        if ("pass" in goal_lower or "apply" in goal_lower) and any(kw in label for kw in ["civic pass", "digital pass", "apply now", "new application"]):
-            selected_element = el
-            reason = f"Click '{el.get('label')}' to begin your pass application."
-            break
-
-    # If no specific keyword matched, pick the first clickable non-sensitive element
-    if not selected_element:
+    # If not at final submit, check search box if user wants to search
+    if not selected_element and "search" in goal_lower:
         for el in elements:
-            if not el.get("sensitive", False) and el.get("tag") in ["a", "button", "input"]:
+            label = (el.get("label") or "").lower()
+            tag = (el.get("tag") or "").lower()
+            role = (el.get("role") or "").lower()
+            if (tag == "input" or role == "searchbox") and "search" in label:
                 selected_element = el
-                reason = f"Select '{el.get('label', 'this element')}' to continue towards your goal: {goal}."
+                reason = f"Type your search query into '{el.get('label')}' to find civic services."
                 break
 
-    # Fallback to the very first element if needed
+    # Check for service/application links (e.g. "Apply for Civic Pass", "Civic Digital Pass")
+    if not selected_element:
+        for el in elements:
+            if el.get("id") in history_ids:
+                continue
+            label = (el.get("label") or "").lower()
+            if any(kw in label for kw in ["civic pass", "digital pass", "apply for pass", "apply now", "new application"]):
+                selected_element = el
+                reason = f"Click '{el.get('label')}' to begin your pass application."
+                break
+
+    # Check for form fields on application page
+    if not selected_element:
+        for el in elements:
+            tag = (el.get("tag") or "").lower()
+            if tag in ["input", "select", "textarea"] and not el.get("sensitive", False):
+                if el.get("id") not in history_ids:
+                    selected_element = el
+                    label = el.get("label", "input field")
+                    reason = f"Fill in your '{label}' using voice assistant or typing."
+                    break
+
+    # If sensitive field is next
+    if not selected_element:
+        for el in elements:
+            if el.get("sensitive", False) and el.get("id") not in history_ids:
+                selected_element = el
+                label = el.get("label", "credential field")
+                reason = f"Sensitive field detected: '{label}'. For your security, type this one yourself."
+                break
+
+    # Fallback to first non-sensitive clickable element not in history
+    if not selected_element:
+        for el in elements:
+            if not el.get("sensitive", False) and el.get("id") not in history_ids:
+                selected_element = el
+                reason = f"Select '{el.get('label', 'this element')}' to continue towards your goal."
+                break
+
+    # Fallback to the very first element in the list
     if not selected_element:
         selected_element = elements[0]
-        reason = f"Navigate using element #{selected_element.get('id')}."
+        reason = f"Continue navigation using element #{selected_element.get('id')}."
 
-    # Detect if the chosen element is a submit button
+    # Mark final if element label indicates submission
     label = (selected_element.get("label") or "").lower()
     if any(w in label for w in ["submit", "pay", "checkout"]):
         is_final = True
@@ -113,7 +149,6 @@ def normalize_spoken_value(text: str) -> str:
     Example: 'meera at example dot com' -> 'meera@example.com'
     """
     val = text.strip()
-    # Replace email spoken tokens
     val = re.sub(r'\s+at\s+', '@', val, flags=re.IGNORECASE)
     val = re.sub(r'\s+dot\s+', '.', val, flags=re.IGNORECASE)
     return val
@@ -171,10 +206,9 @@ def mock_extract_fields(
 
         # Match Category / Dropdown
         elif any(k in label or k in str(field_id).lower() for k in ["category", "type", "pass type"]):
-            match = re.search(r'category\s+([A-Za-z]+)', utterance_clean, re.IGNORECASE)
-            cat_val = match.group(1).strip().capitalize() if match else "General"
+            match = re.search(r'category\s+([A-Za-z\s]+)', utterance_clean, re.IGNORECASE)
+            cat_val = match.group(1).strip() if match else "General"
             
-            # If options list is given, check validity
             if options:
                 matched_option = next((opt for opt in options if opt.lower() == cat_val.lower()), None)
                 if matched_option:
@@ -189,7 +223,7 @@ def mock_extract_fields(
             else:
                 assignments.append({
                     "field_id": field_id,
-                    "value": cat_val,
+                    "value": cat_val.capitalize(),
                     "confidence": 0.94
                 })
                 assigned_ids.add(field_id)

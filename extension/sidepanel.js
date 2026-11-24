@@ -1,13 +1,19 @@
 /**
  * sidepanel.js - WebGPS Side Panel Controller
  *
- * Coordinates scanning requests and DOM highlighting between the side panel UI
- * and the active webpage content script.
+ * Coordinates scanning requests, backend /plan communication,
+ * and DOM highlighting between the side panel UI and active webpage.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
+  const BACKEND_URL = "http://127.0.0.1:5000";
+
+  // Action Buttons
+  const planBtn = document.getElementById("planBtn");
   const scanBtn = document.getElementById("scanBtn");
   const goalInput = document.getElementById("goalInput");
+
+  // Status & Metrics
   const statsBar = document.getElementById("statsBar");
   const totalCountEl = document.getElementById("totalCount");
   const inViewCountEl = document.getElementById("inViewCount");
@@ -16,18 +22,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const emptyState = document.getElementById("emptyState");
   const elementsList = document.getElementById("elementsList");
 
-  // Highlighter Controls (Step 3)
-  const manualHighlightInput = document.getElementById("manualHighlightInput");
-  const manualHighlightBtn = document.getElementById("manualHighlightBtn");
+  // Active AI Guidance Card (Step 4)
   const activeGuidanceCard = document.getElementById("activeGuidanceCard");
   const guidanceBadge = document.getElementById("guidanceBadge");
   const guidanceText = document.getElementById("guidanceText");
   const guidanceWarning = document.getElementById("guidanceWarning");
+  const finalStepAlert = document.getElementById("finalStepAlert");
   const clearHighlightBtn = document.getElementById("clearHighlightBtn");
+  const candidatesContainer = document.getElementById("candidatesContainer");
+  const candidatesList = document.getElementById("candidatesList");
 
-  // Local cache of scanned elements
+  // Manual Highlighter Controls (Step 3)
+  const manualHighlightInput = document.getElementById("manualHighlightInput");
+  const manualHighlightBtn = document.getElementById("manualHighlightBtn");
+
+  // State Management
   let scannedElements = [];
   let currentActiveId = null;
+  let navigationHistory = []; // Last 5 steps per Contract
+  let currentSessionId = "webgps_session_" + Date.now();
 
   /**
    * Retrieves the currently active browser tab.
@@ -50,15 +63,66 @@ document.addEventListener("DOMContentLoaded", () => {
         target: { tabId: tabId },
         files: ["content.js"]
       });
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 120));
       return await chrome.tabs.sendMessage(tabId, message);
     }
   }
 
   /**
+   * Scans elements from the active tab and updates UI state.
+   */
+  async function performScan() {
+    const tab = await getActiveTab();
+    if (!tab || !tab.id) {
+      throw new Error("No active browser tab detected.");
+    }
+
+    if (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://") || tab.url.startsWith("chrome-extension://")) {
+      throw new Error("Extensions cannot scan browser internal pages. Please navigate to any web page or localhost.");
+    }
+
+    const response = await sendContentMessage(tab.id, { action: "SCAN_PAGE" });
+    if (response && response.success && response.data) {
+      renderElements(response.data.elements, response.data.page_title);
+      return response.data;
+    } else {
+      throw new Error(response ? response.error : "Failed to retrieve page scan.");
+    }
+  }
+
+  /**
+   * Calls Flask backend /plan endpoint with contract parameters.
+   */
+  async function requestPlanFromBackend(goal, url, pageTitle, elements) {
+    const payload = {
+      session_id: currentSessionId,
+      goal: goal,
+      url: url,
+      page_title: pageTitle,
+      elements: elements,
+      history: navigationHistory.slice(-5)
+    };
+
+    const res = await fetch(`${BACKEND_URL}/plan`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Backend returned HTTP ${res.status}`);
+    }
+
+    return await res.json();
+  }
+
+  /**
    * Highlights element on the live webpage and reflects it in the UI.
    */
-  async function triggerHighlight(elementId, reasonText) {
+  async function triggerHighlight(elementId, reasonText, isFinal = false) {
     const tab = await getActiveTab();
     if (!tab || !tab.id) return;
 
@@ -76,10 +140,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (response && response.success) {
         currentActiveId = Number(elementId);
-        updateGuidanceCard(currentActiveId, isSensitive, label, reason);
+        updateGuidanceCard(currentActiveId, isSensitive, label, reason, isFinal);
         highlightCardInList(currentActiveId);
-      } else {
-        console.warn("Highlight failed:", response ? response.error : "Unknown error");
+
+        // Record in history (max 5)
+        navigationHistory.push({
+          element_id: currentActiveId,
+          label: label,
+          timestamp: Date.now()
+        });
+        if (navigationHistory.length > 5) {
+          navigationHistory.shift();
+        }
       }
     } catch (err) {
       console.error("Failed to highlight element:", err);
@@ -89,19 +161,44 @@ document.addEventListener("DOMContentLoaded", () => {
   /**
    * Updates the Active Guidance callout banner in the side panel.
    */
-  function updateGuidanceCard(id, isSensitive, label, reason) {
-    guidanceBadge.textContent = `#${id} ${isSensitive ? "🔒 Sensitive" : "Target"}`;
+  function updateGuidanceCard(id, isSensitive, label, reason, isFinal = false) {
+    guidanceBadge.textContent = `#${id} ${isSensitive ? "🔒 Sensitive" : isFinal ? "⚠️ Submit" : "Target"}`;
 
     if (isSensitive) {
       activeGuidanceCard.classList.add("is-sensitive-active");
       guidanceText.textContent = `WebGPS located sensitive field: "${label}".`;
       guidanceWarning.style.display = "flex";
+      finalStepAlert.style.display = "none";
     } else {
       activeGuidanceCard.classList.remove("is-sensitive-active");
       guidanceText.textContent = reason || `Click on "${label}" to proceed towards your goal.`;
       guidanceWarning.style.display = "none";
+
+      if (isFinal) {
+        finalStepAlert.style.display = "flex";
+      } else {
+        finalStepAlert.style.display = "none";
+      }
     }
 
+    candidatesContainer.style.display = "none";
+    activeGuidanceCard.style.display = "block";
+  }
+
+  /**
+   * Displays candidate selection chips when planner is unsure.
+   */
+  function displayCandidates(candidateIds) {
+    candidatesList.innerHTML = "";
+    candidateIds.forEach((cId) => {
+      const el = scannedElements.find((e) => e.id === cId);
+      const chip = document.createElement("button");
+      chip.className = "candidate-chip";
+      chip.textContent = `#${cId} ${el ? el.label.substring(0, 20) : "Element"}`;
+      chip.addEventListener("click", () => triggerHighlight(cId));
+      candidatesList.appendChild(chip);
+    });
+    candidatesContainer.style.display = "block";
     activeGuidanceCard.style.display = "block";
   }
 
@@ -153,7 +250,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Update stats
     const total = elements.length;
     const inView = elements.filter((e) => e.in_viewport).length;
     const sensitive = elements.filter((e) => e.sensitive).length;
@@ -166,7 +262,6 @@ document.addEventListener("DOMContentLoaded", () => {
     pageTitleBadge.textContent = pageTitle || "Scanned Page";
     pageTitleBadge.title = pageTitle || "";
 
-    // Build cards
     elements.forEach((el) => {
       const card = document.createElement("div");
       card.className = `element-card ${el.sensitive ? "is-sensitive" : ""}`;
@@ -223,7 +318,6 @@ document.addEventListener("DOMContentLoaded", () => {
       card.appendChild(badge);
       card.appendChild(details);
 
-      // Click card to highlight this element on the page
       card.addEventListener("click", () => {
         triggerHighlight(el.id);
       });
@@ -236,59 +330,106 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Action: Scan Current Page Elements
+   * Action 1: AI Planner ("Plan Next Step")
+   * Combines scanning, Flask /plan API call, validation, and auto-highlighting.
    */
-  async function handleScan() {
+  async function handlePlan() {
+    const goal = goalInput.value.trim();
+    if (!goal) {
+      alert("Please enter a navigation goal first.");
+      goalInput.focus();
+      return;
+    }
+
     clearActiveHighlight();
-    scanBtn.disabled = true;
-    scanBtn.innerHTML = `
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin">
+    planBtn.disabled = true;
+    planBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin">
         <line x1="12" y1="2" x2="12" y2="6"></line>
         <line x1="12" y1="18" x2="12" y2="22"></line>
-        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
       </svg>
-      <span>Scanning...</span>
+      <span>Thinking...</span>
     `;
 
     try {
-      const tab = await getActiveTab();
-      if (!tab || !tab.id) {
-        throw new Error("No active browser tab found.");
+      // 1. Scan page elements
+      const scanData = await performScan();
+      if (!scanData || scanData.elements.length === 0) {
+        throw new Error("No interactive elements found to plan with.");
       }
 
-      if (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://") || tab.url.startsWith("chrome-extension://")) {
-        throw new Error("Chrome extensions cannot scan internal browser pages. Please open any web page or localhost.");
-      }
+      // 2. Request plan from backend /plan
+      const planRes = await requestPlanFromBackend(
+        goal,
+        scanData.url,
+        scanData.page_title,
+        scanData.elements
+      );
 
-      const response = await sendContentMessage(tab.id, { action: "SCAN_PAGE" });
-      if (response && response.success && response.data) {
-        renderElements(response.data.elements, response.data.page_title);
+      console.log("WebGPS Plan Result:", planRes);
+
+      // 3. Highlight target element
+      if (planRes.element_id) {
+        await triggerHighlight(planRes.element_id, planRes.reason, planRes.is_final_step);
+      } else if (planRes.unsure && planRes.candidates && planRes.candidates.length > 0) {
+        guidanceBadge.textContent = "Unsure";
+        guidanceText.textContent = planRes.reason;
+        displayCandidates(planRes.candidates);
       } else {
-        throw new Error(response ? response.error : "No response from page scanner.");
+        guidanceBadge.textContent = "Completed";
+        guidanceText.textContent = planRes.reason || "Goal reached or no further action needed.";
+        activeGuidanceCard.style.display = "block";
       }
     } catch (err) {
-      console.error("Scan failed:", err);
+      console.error("Plan failed:", err);
+      emptyState.style.display = "block";
+      emptyState.querySelector(".empty-text").innerHTML = `
+        <span style="color: #f87171; font-weight: 600;">Plan Error:</span> ${err.message}<br>
+        <small style="color: #94a3b8; display: block; margin-top: 4px;">Make sure the Flask backend is running on <code>http://127.0.0.1:5000</code>.</small>
+      `;
+      elementsList.style.display = "none";
+    } finally {
+      planBtn.disabled = false;
+      planBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        <span>Plan Next Step</span>
+      `;
+    }
+  }
+
+  /**
+   * Action 2: Inspect Scan Only
+   */
+  async function handleScanOnly() {
+    clearActiveHighlight();
+    scanBtn.disabled = true;
+    scanBtn.innerHTML = `<span>Scanning...</span>`;
+    try {
+      await performScan();
+    } catch (err) {
       emptyState.style.display = "block";
       emptyState.querySelector(".empty-text").innerHTML = `
         <span style="color: #f87171; font-weight: 600;">Scan Failed:</span> ${err.message}
       `;
       elementsList.style.display = "none";
-      statsBar.style.display = "none";
-      pageTitleBadge.textContent = "Error";
     } finally {
       scanBtn.disabled = false;
       scanBtn.innerHTML = `
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <span>Scan Page Elements</span>
+        <span>Scan Only</span>
       `;
     }
   }
 
-  // Manual Highlight button trigger
+  // Event Listeners
+  planBtn.addEventListener("click", handlePlan);
+  scanBtn.addEventListener("click", handleScanOnly);
+
   manualHighlightBtn.addEventListener("click", () => {
     const val = parseInt(manualHighlightInput.value, 10);
     if (!isNaN(val) && val > 0) {
@@ -306,5 +447,4 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   clearHighlightBtn.addEventListener("click", clearActiveHighlight);
-  scanBtn.addEventListener("click", handleScan);
 });
