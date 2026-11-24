@@ -2,7 +2,7 @@
  * sidepanel.js - WebGPS Side Panel Controller
  *
  * Coordinates scanning requests, backend /plan communication,
- * and DOM highlighting between the side panel UI and active webpage.
+ * DOM highlighting, and the continuous Re-plan Loop.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -12,6 +12,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const planBtn = document.getElementById("planBtn");
   const scanBtn = document.getElementById("scanBtn");
   const goalInput = document.getElementById("goalInput");
+  const autoReplanToggle = document.getElementById("autoReplanToggle");
+  const modePillText = document.getElementById("modePillText");
+  const navToast = document.getElementById("navToast");
+  const navToastText = document.getElementById("navToastText");
 
   // Status & Metrics
   const statsBar = document.getElementById("statsBar");
@@ -22,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const emptyState = document.getElementById("emptyState");
   const elementsList = document.getElementById("elementsList");
 
-  // Active AI Guidance Card (Step 4)
+  // Active AI Guidance Card (Step 4 & 5)
   const activeGuidanceCard = document.getElementById("activeGuidanceCard");
   const guidanceBadge = document.getElementById("guidanceBadge");
   const guidanceText = document.getElementById("guidanceText");
@@ -41,6 +45,22 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentActiveId = null;
   let navigationHistory = []; // Last 5 steps per Contract
   let currentSessionId = "webgps_session_" + Date.now();
+  let isPlanningInProgress = false;
+
+  /**
+   * Pings backend health to check active mode (Mock vs Live LLM).
+   */
+  async function checkBackendStatus() {
+    try {
+      const res = await fetch(`${BACKEND_URL}/health`);
+      if (res.ok) {
+        const data = await res.json();
+        modePillText.textContent = data.mock_mode ? "Mock Mode" : (data.llm_provider || "Live LLM");
+      }
+    } catch (e) {
+      modePillText.textContent = "Offline (Local)";
+    }
+  }
 
   /**
    * Retrieves the currently active browser tab.
@@ -143,7 +163,6 @@ document.addEventListener("DOMContentLoaded", () => {
         updateGuidanceCard(currentActiveId, isSensitive, label, reason, isFinal);
         highlightCardInList(currentActiveId);
 
-        // Record in history (max 5)
         navigationHistory.push({
           element_id: currentActiveId,
           label: label,
@@ -210,9 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (tab && tab.id) {
       try {
         await sendContentMessage(tab.id, { action: "CLEAR_HIGHLIGHT" });
-      } catch (e) {
-        // Ignore
-      }
+      } catch (e) {}
     }
     activeGuidanceCard.style.display = "none";
     currentActiveId = null;
@@ -330,10 +347,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Action 1: AI Planner ("Plan Next Step")
-   * Combines scanning, Flask /plan API call, validation, and auto-highlighting.
+   * Action: AI Planner ("Plan Next Step")
    */
   async function handlePlan() {
+    if (isPlanningInProgress) return;
     const goal = goalInput.value.trim();
     if (!goal) {
       alert("Please enter a navigation goal first.");
@@ -341,6 +358,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    isPlanningInProgress = true;
     clearActiveHighlight();
     planBtn.disabled = true;
     planBtn.innerHTML = `
@@ -352,13 +370,11 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
 
     try {
-      // 1. Scan page elements
       const scanData = await performScan();
       if (!scanData || scanData.elements.length === 0) {
         throw new Error("No interactive elements found to plan with.");
       }
 
-      // 2. Request plan from backend /plan
       const planRes = await requestPlanFromBackend(
         goal,
         scanData.url,
@@ -368,7 +384,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       console.log("WebGPS Plan Result:", planRes);
 
-      // 3. Highlight target element
       if (planRes.element_id) {
         await triggerHighlight(planRes.element_id, planRes.reason, planRes.is_final_step);
       } else if (planRes.unsure && planRes.candidates && planRes.candidates.length > 0) {
@@ -385,10 +400,11 @@ document.addEventListener("DOMContentLoaded", () => {
       emptyState.style.display = "block";
       emptyState.querySelector(".empty-text").innerHTML = `
         <span style="color: #f87171; font-weight: 600;">Plan Error:</span> ${err.message}<br>
-        <small style="color: #94a3b8; display: block; margin-top: 4px;">Make sure the Flask backend is running on <code>http://127.0.0.1:5000</code>.</small>
+        <small style="color: #94a3b8; display: block; margin-top: 4px;">Ensure Flask server is running at <code>http://127.0.0.1:5000</code>.</small>
       `;
       elementsList.style.display = "none";
     } finally {
+      isPlanningInProgress = false;
       planBtn.disabled = false;
       planBtn.innerHTML = `
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -400,7 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Action 2: Inspect Scan Only
+   * Action: Inspect Scan Only
    */
   async function handleScanOnly() {
     clearActiveHighlight();
@@ -426,6 +442,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /**
+   * Re-Plan Loop: Handles tab navigation broadcasts from background service worker.
+   */
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "TAB_NAVIGATED") {
+      if (autoReplanToggle && autoReplanToggle.checked) {
+        getActiveTab().then((activeTab) => {
+          if (activeTab && activeTab.id === message.tabId) {
+            console.log("WebGPS Re-plan Loop: Tab navigated to", message.url);
+            navToastText.textContent = `Navigated to ${message.title || "new page"}. Re-planning...`;
+            navToast.style.display = "flex";
+
+            // Debounce slightly to allow dynamic page content to settle
+            setTimeout(async () => {
+              try {
+                await handlePlan();
+              } finally {
+                setTimeout(() => {
+                  navToast.style.display = "none";
+                }, 2000);
+              }
+            }, 500);
+          }
+        });
+      }
+    }
+
+    if (message.action === "HIGHLIGHTED_ELEMENT_CLICKED") {
+      console.log("WebGPS: User clicked highlighted element #", message.element_id);
+    }
+  });
+
   // Event Listeners
   planBtn.addEventListener("click", handlePlan);
   scanBtn.addEventListener("click", handleScanOnly);
@@ -447,4 +495,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   clearHighlightBtn.addEventListener("click", clearActiveHighlight);
+
+  // Initial status check
+  checkBackendStatus();
 });

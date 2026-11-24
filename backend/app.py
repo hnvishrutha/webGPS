@@ -17,6 +17,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 import mock_provider
+import llm_provider
 
 load_dotenv()
 
@@ -58,7 +59,6 @@ def validate_plan_response(plan_res, elements):
     if chosen_id is not None and chosen_id in valid_elements_map:
         matched_el = valid_elements_map[chosen_id]
         label = (matched_el.get("label") or "").lower()
-        tag = (matched_el.get("tag") or "").lower()
 
         # Enforce contract rule: Submit or payment must have is_final_step: True
         if any(w in label for w in ["submit", "pay", "checkout", "confirm and submit", "make payment"]):
@@ -76,6 +76,7 @@ def health_check():
         "status": "online",
         "service": "WebGPS Backend",
         "mock_mode": MOCK_MODE,
+        "llm_provider": "Mock" if MOCK_MODE else "Google Gemini",
         "version": "1.0.0-mvp"
     }), 200
 
@@ -114,21 +115,8 @@ def plan():
             "candidates": []
         }), 200
 
-    # Attempt 1: Call planner
-    plan_result = mock_provider.mock_plan(
-        session_id=session_id,
-        goal=goal,
-        url=url,
-        page_title=page_title,
-        elements=elements,
-        history=history
-    )
-
-    is_valid, validated_result = validate_plan_response(plan_result, elements)
-
-    # Retry Once if validation failed
-    if not is_valid:
-        logging.warning("Planner validator: chosen element_id not in elements list. Retrying once...")
+    # Decision Engine: Mock vs Live LLM
+    if MOCK_MODE:
         plan_result = mock_provider.mock_plan(
             session_id=session_id,
             goal=goal,
@@ -137,6 +125,39 @@ def plan():
             elements=elements,
             history=history
         )
+    else:
+        plan_result = llm_provider.plan_with_llm(
+            session_id=session_id,
+            goal=goal,
+            url=url,
+            page_title=page_title,
+            elements=elements,
+            history=history
+        )
+
+    is_valid, validated_result = validate_plan_response(plan_result, elements)
+
+    # Retry Once if validation failed
+    if not is_valid:
+        logging.warning("Planner validator: chosen element_id not in elements list. Retrying once...")
+        if MOCK_MODE:
+            plan_result = mock_provider.mock_plan(
+                session_id=session_id,
+                goal=goal,
+                url=url,
+                page_title=page_title,
+                elements=elements,
+                history=history
+            )
+        else:
+            plan_result = llm_provider.plan_with_llm(
+                session_id=session_id,
+                goal=goal,
+                url=url,
+                page_title=page_title,
+                elements=elements,
+                history=history
+            )
         is_valid, validated_result = validate_plan_response(plan_result, elements)
 
     # If still invalid, return unsure with top 3 candidate elements
@@ -158,20 +179,14 @@ def plan():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
-    """
-    Speech-to-text endpoint.
-    Accepts audio data (or mock trigger) and returns transcribed text.
-    """
+    """Speech-to-text endpoint."""
     result = mock_provider.mock_transcribe()
     return jsonify(result), 200
 
 
 @app.route("/extract-fields", methods=["POST"])
 def extract_fields():
-    """
-    Form field extraction endpoint.
-    Maps transcribed user utterance to the available non-sensitive fields.
-    """
+    """Form field extraction endpoint."""
     data = request.get_json(silent=True) or {}
     utterance = data.get("utterance", "")
     fields = data.get("fields", [])
@@ -182,10 +197,7 @@ def extract_fields():
 
 @app.route("/safety", methods=["POST"])
 def safety_check():
-    """
-    Deterministic domain and page safety check.
-    Checks official domains list, lookalikes, and insecure flags.
-    """
+    """Deterministic domain and page safety check."""
     data = request.get_json(silent=True) or {}
     url = (data.get("url") or "").lower()
     has_insecure_inputs = data.get("has_insecure_inputs", False)

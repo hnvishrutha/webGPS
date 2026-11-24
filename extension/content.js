@@ -7,17 +7,15 @@
  * 3. Identifies sensitive fields (passwords, OTPs, CVV, Aadhaar, PAN) and flags them.
  * 4. STRICT PRIVACY HONESTY: Never extracts or leaks input values.
  * 5. Highlights target element N with animated glowing overlay and floating badge.
- * 6. Supports "Type this one yourself" sensitive field guidance.
+ * 6. Dispatches user interaction events when the highlighted element is clicked.
  */
 
 (() => {
-  // Global reference map: id -> DOM element
   window.__webgps_elements = new Map();
   let currentHighlightedId = null;
   let activeOverlayEl = null;
   let repositionHandler = null;
 
-  // Keyword patterns for sensitive fields
   const SENSITIVE_PATTERNS = [
     /password/i,
     /otp/i,
@@ -35,9 +33,6 @@
     /security.*code/i
   ];
 
-  /**
-   * Determines if an element should be treated as sensitive data.
-   */
   function isSensitiveElement(el) {
     if (el.tagName === "INPUT" && el.type === "password") {
       return true;
@@ -62,9 +57,6 @@
     return SENSITIVE_PATTERNS.some((pattern) => pattern.test(fullText));
   }
 
-  /**
-   * Checks if an element is visible to the user.
-   */
   function isElementVisible(el) {
     if (!el) return false;
     const style = window.getComputedStyle(el);
@@ -75,9 +67,6 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  /**
-   * Checks if an element is currently inside the visible viewport.
-   */
   function isInViewport(el) {
     const rect = el.getBoundingClientRect();
     return (
@@ -88,9 +77,6 @@
     );
   }
 
-  /**
-   * Finds the closest preceding heading or legend for contextual grouping.
-   */
   function findNearestGroup(el) {
     const fieldset = el.closest("fieldset");
     if (fieldset) {
@@ -119,9 +105,6 @@
     return document.title ? document.title.substring(0, 30) : "General";
   }
 
-  /**
-   * Extracts clean, descriptive label text without reading input values.
-   */
   function getCleanLabel(el) {
     const ariaLabel = el.getAttribute("aria-label");
     if (ariaLabel && ariaLabel.trim()) {
@@ -166,9 +149,6 @@
     return `${el.tagName.toLowerCase()} element`;
   }
 
-  /**
-   * Scans the DOM and produces the standard Contract Element array.
-   */
   function scanPageElements() {
     window.__webgps_elements.clear();
 
@@ -190,8 +170,6 @@
 
     for (const el of candidates) {
       if (!isElementVisible(el)) continue;
-
-      // Skip elements that are part of WebGPS overlays
       if (el.closest("#webgps-overlay-layer, #webgps-badge-layer")) continue;
 
       const tag = el.tagName.toLowerCase();
@@ -238,9 +216,6 @@
     };
   }
 
-  /**
-   * Removes any active highlight overlay from the webpage.
-   */
   function clearHighlight() {
     if (activeOverlayEl) {
       activeOverlayEl.remove();
@@ -254,9 +229,6 @@
     currentHighlightedId = null;
   }
 
-  /**
-   * Injects CSS animation keyframes for the highlight box into the page.
-   */
   function ensureHighlightStyles() {
     if (document.getElementById("webgps-style-block")) return;
     const style = document.createElement("style");
@@ -276,15 +248,10 @@
     document.head.appendChild(style);
   }
 
-  /**
-   * Highlights element N with a smooth scroll, glowing outline, and floating badge.
-   * If the element is sensitive, uses amber warning styling and notice.
-   */
   function highlightElement(elementId, reason) {
     ensureHighlightStyles();
     clearHighlight();
 
-    // Re-scan if elements cache is empty
     if (window.__webgps_elements.size === 0) {
       scanPageElements();
     }
@@ -298,14 +265,12 @@
     const isSensitive = isSensitiveElement(targetEl);
     currentHighlightedId = elementId;
 
-    // Smoothly scroll the element into view
     targetEl.scrollIntoView({
       behavior: "smooth",
       block: "center",
       inline: "nearest"
     });
 
-    // Create the overlay container
     const overlay = document.createElement("div");
     overlay.id = "webgps-overlay-layer";
     overlay.style.cssText = `
@@ -325,7 +290,6 @@
       overlay.style.animation = "webgps-pulse-primary 2s infinite";
     }
 
-    // Floating Badge
     const badge = document.createElement("div");
     badge.style.cssText = `
       position: absolute;
@@ -356,21 +320,18 @@
     document.body.appendChild(overlay);
     activeOverlayEl = overlay;
 
-    // Position updater function
     function updateOverlayPosition() {
       if (!targetEl || !overlay) return;
       const rect = targetEl.getBoundingClientRect();
       const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
       const scrollY = window.pageYOffset || document.documentElement.scrollTop;
 
-      // Add a slight 4px padding around target element
       const padding = 4;
       overlay.style.left = `${rect.left + scrollX - padding}px`;
       overlay.style.top = `${rect.top + scrollY - padding}px`;
       overlay.style.width = `${rect.width + padding * 2}px`;
       overlay.style.height = `${rect.height + padding * 2}px`;
 
-      // Flip badge below if near top of page
       if (rect.top < 36) {
         badge.style.top = `${rect.height + padding * 2 + 4}px`;
       } else {
@@ -378,15 +339,21 @@
       }
     }
 
-    // Immediate position calculation & delay calculation after smooth scroll
     updateOverlayPosition();
     setTimeout(updateOverlayPosition, 250);
     setTimeout(updateOverlayPosition, 500);
 
-    // Keep overlay positioned during user scroll or resize
     repositionHandler = updateOverlayPosition;
     window.addEventListener("scroll", repositionHandler, { passive: true, capture: true });
     window.addEventListener("resize", repositionHandler, { passive: true });
+
+    // Listen for user action on the highlighted element to inform re-plan loop
+    targetEl.addEventListener("click", () => {
+      chrome.runtime.sendMessage({
+        action: "HIGHLIGHTED_ELEMENT_CLICKED",
+        element_id: elementId
+      }).catch(() => {});
+    }, { once: true });
 
     return {
       success: true,
@@ -395,7 +362,6 @@
     };
   }
 
-  // Listen for messages from side panel
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "PING") {
       sendResponse({ status: "PONG" });
@@ -431,5 +397,5 @@
     }
   });
 
-  console.log("WebGPS Content Script (with Highlighter) loaded and active.");
+  console.log("WebGPS Content Script loaded and active.");
 })();

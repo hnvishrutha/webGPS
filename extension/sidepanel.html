@@ -21,11 +21,17 @@
         <span class="brand-subtitle">AI Navigation & Voice Fill</span>
       </div>
     </div>
-    <div class="mode-pill" id="modePill" title="Operating in offline Mock Mode">
+    <div class="mode-pill" id="modePill" title="Operating mode">
       <span class="mode-dot"></span>
-      <span class="mode-text">Mock Mode</span>
+      <span class="mode-text" id="modePillText">Mock Mode</span>
     </div>
   </header>
+
+  <!-- Navigation Toast (Appears during Re-plan loop) -->
+  <div class="nav-toast" id="navToast" style="display: none;">
+    <span class="toast-dot animate-ping"></span>
+    <span id="navToastText">Page changed. WebGPS is re-planning...</span>
+  </div>
 
   <!-- Safety & Security Banner -->
   <section class="safety-banner safe" id="safetyBanner">
@@ -40,7 +46,7 @@
     </div>
   </section>
 
-  <!-- Active AI Guidance & Step Callout Card (Step 4) -->
+  <!-- Active AI Guidance & Step Callout Card (Step 4 & 5) -->
   <section class="active-guidance-card" id="activeGuidanceCard" style="display: none;">
     <div class="guidance-header">
       <span class="guidance-badge" id="guidanceBadge">Element #0</span>
@@ -52,7 +58,7 @@
       </button>
     </div>
     <div class="guidance-body">
-      <div class="reason-label">AI Navigation Reason:</div>
+      <div class="reason-label">AI Navigation Guidance:</div>
       <p class="guidance-text" id="guidanceText">Click on this element to advance towards your goal.</p>
 
       <!-- Final Submit Callout (Strict User-Control Contract) -->
@@ -118,6 +124,16 @@
       </button>
     </div>
 
+    <!-- Re-plan Loop Switch (Step 5) -->
+    <div class="replan-toggle-row">
+      <label class="switch-container">
+        <input type="checkbox" id="autoReplanToggle" checked />
+        <span class="switch-slider"></span>
+        <span class="switch-label">Continuous Re-plan Loop</span>
+      </label>
+      <span class="loop-indicator" title="Automatically re-plans when page changes">Active</span>
+    </div>
+
     <!-- Quick Highlighter Controller (Manual testing) -->
     <div class="highlighter-quickbar">
       <span class="quickbar-label">Direct Highlight:</span>
@@ -160,7 +176,7 @@
           <line x1="12" y1="17" x2="12" y2="21"></line>
         </svg>
       </div>
-      <p class="empty-text">Click <strong>Plan Next Step</strong> to let the AI pick the best action, or <strong>Scan Only</strong> to inspect numbered elements.</p>
+      <p class="empty-text">Click <strong>Plan Next Step</strong> to begin guided navigation across the portal.</p>
     </div>
 
     <!-- Dynamic List Container -->
