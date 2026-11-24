@@ -1,13 +1,13 @@
 /**
- * content.js - WebGPS Page Scanner, Highlighter & Contract Enforcer
+ * content.js - WebGPS Page Scanner, Highlighter, Form Filler & Contract Enforcer
  *
  * Responsibilities:
- * 1. Scans interactive elements on the page.
- * 2. Assigns deterministic integer IDs (1..N).
- * 3. Identifies sensitive fields (passwords, OTPs, CVV, Aadhaar, PAN) and flags them.
- * 4. STRICT PRIVACY HONESTY: Never extracts or leaks input values.
- * 5. Highlights target element N with animated glowing overlay and floating badge.
- * 6. Dispatches user interaction events when the highlighted element is clicked.
+ * 1. Scans interactive elements and classifies sensitive fields.
+ * 2. Strictly adheres to privacy contracts: never reads or leaks input values.
+ * 3. Highlights target elements with animated focus overlay.
+ * 4. Fills form fields ONLY after explicit user confirmation on non-sensitive fields.
+ * 5. Fires DOM input & change events for modern frontend frameworks.
+ * 6. Checks for insecure transport / password on non-HTTPS.
  */
 
 (() => {
@@ -208,10 +208,16 @@
       if (elements.length >= 100) break;
     }
 
+    // Safety flags check
+    const isHttp = window.location.protocol === "http:" && !window.location.hostname.includes("localhost") && !window.location.hostname.includes("127.0.0.1");
+    const hasPasswordOnHttp = isHttp && document.querySelector("input[type='password']") !== null;
+
     return {
       elements: elements,
       page_title: document.title || "Untitled Page",
       url: window.location.href,
+      has_insecure_inputs: hasPasswordOnHttp,
+      is_http: isHttp,
       timestamp: Date.now()
     };
   }
@@ -347,7 +353,6 @@
     window.addEventListener("scroll", repositionHandler, { passive: true, capture: true });
     window.addEventListener("resize", repositionHandler, { passive: true });
 
-    // Listen for user action on the highlighted element to inform re-plan loop
     targetEl.addEventListener("click", () => {
       chrome.runtime.sendMessage({
         action: "HIGHLIGHTED_ELEMENT_CLICKED",
@@ -360,6 +365,64 @@
       element_id: elementId,
       sensitive: isSensitive
     };
+  }
+
+  /**
+   * Fills form fields on the page following user confirmation.
+   * Strictly enforces that sensitive fields are NEVER filled.
+   */
+  function fillFormFields(assignments) {
+    let filledCount = 0;
+
+    for (const item of (assignments || [])) {
+      const el = window.__webgps_elements.get(Number(item.field_id));
+      if (!el) continue;
+
+      // Hard Security Shield: Never auto-fill sensitive fields
+      if (isSensitiveElement(el)) {
+        console.warn(`WebGPS Shield: Blocked auto-fill on sensitive field #${item.field_id}`);
+        continue;
+      }
+
+      if (el.tagName === "SELECT") {
+        let matched = false;
+        const targetVal = String(item.value).toLowerCase();
+        for (let i = 0; i < el.options.length; i++) {
+          const opt = el.options[i];
+          if (opt.text.toLowerCase() === targetVal || opt.value.toLowerCase() === targetVal) {
+            el.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched && el.options.length > 1) {
+          el.selectedIndex = 1;
+        }
+      } else {
+        el.value = item.value;
+      }
+
+      // Dispatch standard DOM events so Angular, React, Vue, and vanilla JS pick up changes
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+
+      // Temporary green outline to visually confirm filled field
+      const origBorder = el.style.border;
+      const origTransition = el.style.transition;
+      el.style.transition = "border-color 0.2s ease, box-shadow 0.2s ease";
+      el.style.borderColor = "#10b981";
+      el.style.boxShadow = "0 0 0 3px rgba(16, 185, 129, 0.25)";
+
+      setTimeout(() => {
+        el.style.borderColor = origBorder;
+        el.style.boxShadow = "";
+        el.style.transition = origTransition;
+      }, 2500);
+
+      filledCount++;
+    }
+
+    return { success: true, filled_count: filledCount };
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -390,6 +453,17 @@
       return true;
     }
 
+    if (message.action === "FILL_FIELDS") {
+      try {
+        const res = fillFormFields(message.assignments);
+        sendResponse(res);
+      } catch (err) {
+        console.error("WebGPS Fill Error:", err);
+        sendResponse({ success: false, error: err.message });
+      }
+      return true;
+    }
+
     if (message.action === "CLEAR_HIGHLIGHT") {
       clearHighlight();
       sendResponse({ success: true });
@@ -397,5 +471,5 @@
     }
   });
 
-  console.log("WebGPS Content Script loaded and active.");
+  console.log("WebGPS Content Script (Scanner + Highlighter + Form Filler) loaded and active.");
 })();

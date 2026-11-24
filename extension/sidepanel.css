@@ -133,15 +133,20 @@ body {
   border-radius: 50%;
 }
 
-/* Safety Banner */
+/* Safety Banner with Evidence Drawer (Step 7) */
 .safety-banner {
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  font-size: 11.5px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.safety-header {
   display: flex;
   align-items: flex-start;
   gap: 9px;
   padding: 8px 11px;
-  border-radius: var(--radius-sm);
-  margin-bottom: 12px;
-  font-size: 11.5px;
 }
 
 .safety-banner.safe {
@@ -150,16 +155,38 @@ body {
   color: #a7f3d0;
 }
 
+.safety-banner.caution {
+  background: var(--warning-bg);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+}
+
+.safety-banner.danger {
+  background: var(--danger-bg);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
 .safety-icon {
   margin-top: 1px;
   color: var(--success);
   flex-shrink: 0;
 }
 
+.safety-banner.caution .safety-icon { color: var(--warning); }
+.safety-banner.danger .safety-icon { color: var(--danger); }
+
+.safety-content {
+  flex: 1;
+}
+
 .safety-title {
-  font-weight: 600;
+  font-weight: 700;
   color: #ecfdf5;
 }
+
+.safety-banner.caution .safety-title { color: #fef08a; }
+.safety-banner.danger .safety-title { color: #fecaca; }
 
 .safety-desc {
   color: #6ee7b7;
@@ -167,7 +194,49 @@ body {
   margin-top: 1px;
 }
 
-/* Active Guidance Callout Card (Step 4 & 5) */
+.safety-banner.caution .safety-desc { color: #fde047; }
+.safety-banner.danger .safety-desc { color: #f87171; }
+
+.safety-evidence-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: inherit;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: center;
+  transition: background-color 0.15s;
+}
+
+.safety-evidence-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.safety-evidence-drawer {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.evidence-item {
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.evidence-item strong {
+  display: block;
+  font-size: 10.5px;
+  color: #f1f5f9;
+}
+
+/* Active Guidance Callout Card (Step 4, 5 & 8) */
 .active-guidance-card {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.18) 0%, rgba(30, 41, 59, 0.9) 100%);
   border: 1px solid #6366f1;
@@ -195,6 +264,12 @@ body {
   margin-bottom: 8px;
 }
 
+.guidance-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .guidance-badge {
   font-size: 11px;
   font-weight: 700;
@@ -206,6 +281,27 @@ body {
 
 .active-guidance-card.is-sensitive-active .guidance-badge {
   background: #b45309;
+}
+
+/* TTS Speak Button (Step 8) */
+.btn-tts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  color: #e0e7ff;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-tts:hover {
+  background: #6366f1;
+  color: #fff;
 }
 
 .btn-icon {
@@ -242,7 +338,7 @@ body {
   line-height: 1.4;
 }
 
-/* Final Step Alert (Human in the Loop Guarantee) */
+/* Final Step Alert */
 .final-step-alert {
   display: flex;
   align-items: flex-start;
@@ -329,6 +425,215 @@ body {
   background: #6366f1;
   color: #fff;
   border-color: #6366f1;
+}
+
+/* Voice Form-Filling Section (Step 6) */
+.voice-card {
+  background: linear-gradient(135deg, #1e293b 0%, #172554 100%);
+  border: 1px solid #3b82f6;
+  position: relative;
+  overflow: hidden;
+}
+
+.voice-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.voice-description {
+  font-size: 11.5px;
+  color: #cbd5e1;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.voice-controls-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.btn-mic {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  padding: 9px 12px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.btn-mic:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.btn-mic.recording {
+  background: #dc2626;
+  animation: pulse-mic 1s infinite alternate;
+}
+
+@keyframes pulse-mic {
+  from { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+  to { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+
+.btn-demo-speech {
+  background: #334155;
+  color: #e2e8f0;
+  font-size: 11px;
+}
+
+.btn-demo-speech:hover {
+  background: #475569;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: var(--radius-sm);
+  color: #fca5a5;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.recording-pulse {
+  width: 8px;
+  height: 8px;
+  background-color: #ef4444;
+  border-radius: 50%;
+  animation: pulse-dot 1s infinite ease-in-out;
+}
+
+.transcript-box {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.transcript-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.transcript-text {
+  font-size: 12px;
+  color: #93c5fd;
+  font-style: italic;
+}
+
+/* Confirmation Card (Human in the Loop Fill) */
+.confirmation-card {
+  background: #0f172a;
+  border: 1px solid #10b981;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 10px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+  animation: slide-in 0.2s ease-out;
+}
+
+.confirmation-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.confirmation-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ecfdf5;
+}
+
+.confirmation-subtitle {
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.assignments-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.assignment-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.field-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #a7f3d0;
+}
+
+.field-val-input {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: #ffffff;
+  font-size: 11.5px;
+  outline: none;
+}
+
+.field-val-input:focus {
+  border-color: #10b981;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-confirm {
+  background: #10b981;
+  color: #ffffff;
+  flex: 1;
+  padding: 6px 10px;
+}
+
+.btn-confirm:hover {
+  background: #059669;
+}
+
+.btn-cancel {
+  background: #334155;
+  color: #cbd5e1;
+  padding: 6px 10px;
+}
+
+.btn-cancel:hover {
+  background: #475569;
+}
+
+.fill-success-banner {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: var(--success-bg);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-sm);
+  color: #6ee7b7;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* Cards & Inputs */
@@ -617,7 +922,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: calc(100vh - 370px);
+  max-height: calc(100vh - 440px);
   overflow-y: auto;
   padding-right: 2px;
 }

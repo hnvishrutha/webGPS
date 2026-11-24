@@ -1,14 +1,18 @@
 /**
  * sidepanel.js - WebGPS Side Panel Controller
  *
- * Coordinates scanning requests, backend /plan communication,
- * DOM highlighting, and the continuous Re-plan Loop.
+ * Full Feature Set:
+ * 1. AI Navigation Planner with validation & retry
+ * 2. Continuous Re-plan Loop on navigation
+ * 3. Voice Form-Filling: WebSpeech / MediaRecorder / Demo STT -> /extract-fields -> Editable Confirmation Card -> Safe DOM Fill
+ * 4. Deterministic Safety Verification with expandable Evidence Drawer
+ * 5. Text-To-Speech (TTS) Voice Readout for steps
  */
 
 document.addEventListener("DOMContentLoaded", () => {
   const BACKEND_URL = "http://127.0.0.1:5000";
 
-  // Action Buttons
+  // Navigation & Planner Controls
   const planBtn = document.getElementById("planBtn");
   const scanBtn = document.getElementById("scanBtn");
   const goalInput = document.getElementById("goalInput");
@@ -17,16 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const navToast = document.getElementById("navToast");
   const navToastText = document.getElementById("navToastText");
 
-  // Status & Metrics
-  const statsBar = document.getElementById("statsBar");
-  const totalCountEl = document.getElementById("totalCount");
-  const inViewCountEl = document.getElementById("inViewCount");
-  const sensitiveCountEl = document.getElementById("sensitiveCount");
-  const pageTitleBadge = document.getElementById("pageTitleBadge");
-  const emptyState = document.getElementById("emptyState");
-  const elementsList = document.getElementById("elementsList");
-
-  // Active AI Guidance Card (Step 4 & 5)
+  // Active AI Guidance Card (Step 4, 5 & 8)
   const activeGuidanceCard = document.getElementById("activeGuidanceCard");
   const guidanceBadge = document.getElementById("guidanceBadge");
   const guidanceText = document.getElementById("guidanceText");
@@ -35,6 +30,38 @@ document.addEventListener("DOMContentLoaded", () => {
   const clearHighlightBtn = document.getElementById("clearHighlightBtn");
   const candidatesContainer = document.getElementById("candidatesContainer");
   const candidatesList = document.getElementById("candidatesList");
+  const ttsBtn = document.getElementById("ttsBtn");
+
+  // Voice Form-Filling Controls (Step 6)
+  const micBtn = document.getElementById("micBtn");
+  const micBtnLabel = document.getElementById("micBtnLabel");
+  const demoSpeechBtn = document.getElementById("demoSpeechBtn");
+  const recordingIndicator = document.getElementById("recordingIndicator");
+  const recordingStatusText = document.getElementById("recordingStatusText");
+  const transcriptBox = document.getElementById("transcriptBox");
+  const transcriptText = document.getElementById("transcriptText");
+  const confirmationCard = document.getElementById("confirmationCard");
+  const assignmentsList = document.getElementById("assignmentsList");
+  const confirmFillBtn = document.getElementById("confirmFillBtn");
+  const cancelFillBtn = document.getElementById("cancelFillBtn");
+  const fillSuccessBanner = document.getElementById("fillSuccessBanner");
+
+  // Safety Controls (Step 7)
+  const safetyBanner = document.getElementById("safetyBanner");
+  const safetyTitle = document.getElementById("safetyTitle");
+  const safetyDesc = document.getElementById("safetyDesc");
+  const toggleEvidenceBtn = document.getElementById("toggleEvidenceBtn");
+  const safetyEvidenceDrawer = document.getElementById("safetyEvidenceDrawer");
+  const evidenceList = document.getElementById("evidenceList");
+
+  // Inspector & Stats
+  const statsBar = document.getElementById("statsBar");
+  const totalCountEl = document.getElementById("totalCount");
+  const inViewCountEl = document.getElementById("inViewCount");
+  const sensitiveCountEl = document.getElementById("sensitiveCount");
+  const pageTitleBadge = document.getElementById("pageTitleBadge");
+  const emptyState = document.getElementById("emptyState");
+  const elementsList = document.getElementById("elementsList");
 
   // Manual Highlighter Controls (Step 3)
   const manualHighlightInput = document.getElementById("manualHighlightInput");
@@ -43,12 +70,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // State Management
   let scannedElements = [];
   let currentActiveId = null;
-  let navigationHistory = []; // Last 5 steps per Contract
+  let navigationHistory = [];
   let currentSessionId = "webgps_session_" + Date.now();
   let isPlanningInProgress = false;
+  let isRecording = false;
+  let speechRecognition = null;
+  let pendingAssignments = [];
 
   /**
-   * Pings backend health to check active mode (Mock vs Live LLM).
+   * Health Check: Checks backend status and updates mode indicator.
    */
   async function checkBackendStatus() {
     try {
@@ -58,22 +88,15 @@ document.addEventListener("DOMContentLoaded", () => {
         modePillText.textContent = data.mock_mode ? "Mock Mode" : (data.llm_provider || "Live LLM");
       }
     } catch (e) {
-      modePillText.textContent = "Offline (Local)";
+      modePillText.textContent = "Offline (Mock Fallback)";
     }
   }
 
-  /**
-   * Retrieves the currently active browser tab.
-   */
   async function getActiveTab() {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     return tabs && tabs.length > 0 ? tabs[0] : null;
   }
 
-  /**
-   * Sends a message to the active tab, programmatically injecting
-   * content script if the tab was loaded before extension initialization.
-   */
   async function sendContentMessage(tabId, message) {
     try {
       return await chrome.tabs.sendMessage(tabId, message);
@@ -89,7 +112,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Scans elements from the active tab and updates UI state.
+   * Scans elements from the active tab and executes safety check.
    */
   async function performScan() {
     const tab = await getActiveTab();
@@ -98,12 +121,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://") || tab.url.startsWith("chrome-extension://")) {
-      throw new Error("Extensions cannot scan browser internal pages. Please navigate to any web page or localhost.");
+      throw new Error("Extensions cannot scan browser internal pages. Please open a webpage or localhost.");
     }
 
     const response = await sendContentMessage(tab.id, { action: "SCAN_PAGE" });
     if (response && response.success && response.data) {
       renderElements(response.data.elements, response.data.page_title);
+      // Run deterministic safety check on page URL and security signals
+      runSafetyCheck(response.data.url, response.data.has_insecure_inputs);
       return response.data;
     } else {
       throw new Error(response ? response.error : "Failed to retrieve page scan.");
@@ -111,33 +136,55 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /**
-   * Calls Flask backend /plan endpoint with contract parameters.
+   * Step 7: Deterministic Safety Check with Evidence
    */
-  async function requestPlanFromBackend(goal, url, pageTitle, elements) {
-    const payload = {
-      session_id: currentSessionId,
-      goal: goal,
-      url: url,
-      page_title: pageTitle,
-      elements: elements,
-      history: navigationHistory.slice(-5)
-    };
+  async function runSafetyCheck(url, hasInsecureInputs) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/safety`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url, has_insecure_inputs: hasInsecureInputs })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updateSafetyUI(data.level, data.findings);
+      }
+    } catch (e) {
+      console.warn("Safety check network warning:", e);
+    }
+  }
 
-    const res = await fetch(`${BACKEND_URL}/plan`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
+  function updateSafetyUI(level, findings) {
+    safetyBanner.className = `safety-banner ${level}`;
+    evidenceList.innerHTML = "";
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || `Backend returned HTTP ${res.status}`);
+    if (level === "danger") {
+      safetyTitle.textContent = "Security Alert: Look-alike / Insecure";
+      safetyDesc.textContent = "Potential spoofed portal or insecure transport detected.";
+    } else if (level === "caution") {
+      safetyTitle.textContent = "Unverified Domain";
+      safetyDesc.textContent = "Domain is not in the official government registry.";
+    } else {
+      safetyTitle.textContent = "Official Domain Verified";
+      safetyDesc.textContent = "Recognized public gateway. Secrets and inputs protected.";
     }
 
-    return await res.json();
+    (findings || []).forEach((f) => {
+      const item = document.createElement("div");
+      item.className = "evidence-item";
+      item.innerHTML = `
+        <strong>${f.check} &bull; ${f.result.toUpperCase()}</strong>
+        <span class="evidence-desc">${f.evidence}</span>
+      `;
+      evidenceList.appendChild(item);
+    });
   }
+
+  toggleEvidenceBtn.addEventListener("click", () => {
+    const isHidden = safetyEvidenceDrawer.style.display === "none";
+    safetyEvidenceDrawer.style.display = isHidden ? "block" : "none";
+    toggleEvidenceBtn.innerHTML = isHidden ? "Evidence &#x25B4;" : "Evidence &#x25BE;";
+  });
 
   /**
    * Highlights element on the live webpage and reflects it in the UI.
@@ -177,9 +224,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /**
-   * Updates the Active Guidance callout banner in the side panel.
-   */
   function updateGuidanceCard(id, isSensitive, label, reason, isFinal = false) {
     guidanceBadge.textContent = `#${id} ${isSensitive ? "🔒 Sensitive" : isFinal ? "⚠️ Submit" : "Target"}`;
 
@@ -204,9 +248,6 @@ document.addEventListener("DOMContentLoaded", () => {
     activeGuidanceCard.style.display = "block";
   }
 
-  /**
-   * Displays candidate selection chips when planner is unsure.
-   */
   function displayCandidates(candidateIds) {
     candidatesList.innerHTML = "";
     candidateIds.forEach((cId) => {
@@ -221,9 +262,6 @@ document.addEventListener("DOMContentLoaded", () => {
     activeGuidanceCard.style.display = "block";
   }
 
-  /**
-   * Clears any active highlight on page and resets UI.
-   */
   async function clearActiveHighlight() {
     const tab = await getActiveTab();
     if (tab && tab.id) {
@@ -236,9 +274,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".element-card.is-active").forEach((c) => c.classList.remove("is-active"));
   }
 
-  /**
-   * Highlights the corresponding card in the side panel list.
-   */
   function highlightCardInList(id) {
     document.querySelectorAll(".element-card").forEach((card) => {
       if (Number(card.dataset.id) === Number(id)) {
@@ -250,9 +285,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  /**
-   * Renders the scanned elements into the side panel card list.
-   */
   function renderElements(elements, pageTitle) {
     scannedElements = elements || [];
     elementsList.innerHTML = "";
@@ -375,13 +407,25 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error("No interactive elements found to plan with.");
       }
 
-      const planRes = await requestPlanFromBackend(
-        goal,
-        scanData.url,
-        scanData.page_title,
-        scanData.elements
-      );
+      const res = await fetch(`${BACKEND_URL}/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          goal: goal,
+          url: scanData.url,
+          page_title: scanData.page_title,
+          elements: scanData.elements,
+          history: navigationHistory.slice(-5)
+        })
+      });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server HTTP ${res.status}`);
+      }
+
+      const planRes = await res.json();
       console.log("WebGPS Plan Result:", planRes);
 
       if (planRes.element_id) {
@@ -442,9 +486,246 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // =========================================================================
+  // STEP 6: VOICE FORM-FILLING PIPELINE (MIC -> STT -> EXTRACT -> CONFIRM -> FILL)
+  // =========================================================================
+
   /**
-   * Re-Plan Loop: Handles tab navigation broadcasts from background service worker.
+   * Processes a spoken utterance string through backend /extract-fields,
+   * presents the Confirmation Card, and prepares values for filling.
    */
+  async function processSpokenUtterance(utterance) {
+    transcriptText.textContent = `"${utterance}"`;
+    transcriptBox.style.display = "block";
+    fillSuccessBanner.style.display = "none";
+
+    // 1. Ensure page elements are scanned
+    if (scannedElements.length === 0) {
+      await performScan();
+    }
+
+    // 2. Filter ONLY non-sensitive form fields
+    const formFields = scannedElements.filter((el) => {
+      return (
+        ["input", "select", "textarea"].includes(el.tag) &&
+        el.type !== "submit" &&
+        el.type !== "button" &&
+        !el.sensitive // NEVER send sensitive fields
+      );
+    });
+
+    if (formFields.length === 0) {
+      alert("No fillable non-sensitive form fields detected on this page.");
+      return;
+    }
+
+    // 3. Call backend /extract-fields
+    try {
+      const res = await fetch(`${BACKEND_URL}/extract-fields`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          utterance: utterance,
+          fields: formFields
+        })
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      console.log("WebGPS Extracted Fields:", data);
+
+      if (!data.assignments || data.assignments.length === 0) {
+        alert("WebGPS heard the utterance, but could not confidently match it to any form field.");
+        return;
+      }
+
+      // 4. Render Editable Confirmation Card (Human-in-the-Loop)
+      renderConfirmationCard(data.assignments);
+    } catch (err) {
+      console.error("Field extraction error:", err);
+      alert("Field extraction failed: " + err.message);
+    }
+  }
+
+  /**
+   * Renders the confirmation card with editable inputs for each field value.
+   */
+  function renderConfirmationCard(assignments) {
+    pendingAssignments = assignments;
+    assignmentsList.innerHTML = "";
+
+    assignments.forEach((assign, index) => {
+      const el = scannedElements.find((e) => e.id === Number(assign.field_id));
+      const row = document.createElement("div");
+      row.className = "assignment-row";
+
+      const nameLabel = document.createElement("label");
+      nameLabel.className = "field-name";
+      nameLabel.textContent = `${el ? el.label : "Field #" + assign.field_id}:`;
+
+      const valInput = document.createElement("input");
+      valInput.type = "text";
+      valInput.className = "field-val-input";
+      valInput.value = assign.value;
+      valInput.dataset.index = index;
+
+      valInput.addEventListener("input", (e) => {
+        pendingAssignments[index].value = e.target.value;
+      });
+
+      row.appendChild(nameLabel);
+      row.appendChild(valInput);
+      assignmentsList.appendChild(row);
+    });
+
+    confirmationCard.style.display = "block";
+    confirmationCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  /**
+   * Confirm & Fill: User clicks confirm to insert validated values into page DOM.
+   */
+  confirmFillBtn.addEventListener("click", async () => {
+    confirmFillBtn.disabled = true;
+    confirmFillBtn.innerHTML = `<span>Inserting...</span>`;
+
+    const tab = await getActiveTab();
+    if (tab && tab.id) {
+      try {
+        const res = await sendContentMessage(tab.id, {
+          action: "FILL_FIELDS",
+          assignments: pendingAssignments
+        });
+
+        if (res && res.success) {
+          confirmationCard.style.display = "none";
+          fillSuccessBanner.style.display = "block";
+          fillSuccessBanner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+          // Voice feedback if TTS is available
+          speakText(`Filled ${res.filled_count} fields. Review your details and click submit yourself.`);
+        }
+      } catch (err) {
+        console.error("DOM fill error:", err);
+        alert("Failed to insert fields into page: " + err.message);
+      } finally {
+        confirmFillBtn.disabled = false;
+        confirmFillBtn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Confirm & Fill Form</span>
+        `;
+      }
+    }
+  });
+
+  cancelFillBtn.addEventListener("click", () => {
+    confirmationCard.style.display = "none";
+    pendingAssignments = [];
+  });
+
+  /**
+   * Microphone Button: Uses Web Speech API with fallback.
+   */
+  micBtn.addEventListener("click", () => {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    // Check Web Speech API support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        speechRecognition = new SpeechRecognition();
+        speechRecognition.continuous = false;
+        speechRecognition.interimResults = false;
+        speechRecognition.lang = "en-US";
+
+        speechRecognition.onstart = () => {
+          isRecording = true;
+          micBtn.classList.add("recording");
+          micBtnLabel.textContent = "Listening...";
+          recordingIndicator.style.display = "flex";
+        };
+
+        speechRecognition.onresult = (event) => {
+          const speechResult = event.results[0][0].transcript;
+          console.log("WebGPS Voice Input:", speechResult);
+          stopRecording();
+          processSpokenUtterance(speechResult);
+        };
+
+        speechRecognition.onerror = (event) => {
+          console.warn("Speech recognition notice:", event.error);
+          stopRecording();
+          // Fallback to demo utterance as specified in Section 6 fallback hierarchy
+          alert(`Microphone notice: ${event.error}. Loading demo voice phrase for testing.`);
+          triggerDemoVoice();
+        };
+
+        speechRecognition.onend = () => {
+          stopRecording();
+        };
+
+        speechRecognition.start();
+      } catch (e) {
+        console.error("Mic initialization failed:", e);
+        triggerDemoVoice();
+      }
+    } else {
+      triggerDemoVoice();
+    }
+  });
+
+  function stopRecording() {
+    isRecording = false;
+    micBtn.classList.remove("recording");
+    micBtnLabel.textContent = "Speak Details";
+    recordingIndicator.style.display = "none";
+    if (speechRecognition) {
+      try { speechRecognition.stop(); } catch (e) {}
+      speechRecognition = null;
+    }
+  }
+
+  /**
+   * Demo Voice Trigger (Zero-dependency fallback)
+   */
+  function triggerDemoVoice() {
+    const demoUtterance = "My name is Meera Nair, email meera at example dot com, category general";
+    processSpokenUtterance(demoUtterance);
+  }
+
+  demoSpeechBtn.addEventListener("click", triggerDemoVoice);
+
+  // =========================================================================
+  // STEP 8: TEXT-TO-SPEECH (TTS) STEP READOUT
+  // =========================================================================
+
+  function speakText(text) {
+    if (!text) return;
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
+  ttsBtn.addEventListener("click", () => {
+    const textToSpeak = guidanceText.textContent;
+    if (textToSpeak) {
+      speakText(textToSpeak);
+    }
+  });
+
+  // =========================================================================
+  // STEP 5 RE-PLAN LOOP: NAVIGATION BROADCAST LISTENER
+  // =========================================================================
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "TAB_NAVIGATED") {
       if (autoReplanToggle && autoReplanToggle.checked) {
@@ -454,7 +735,6 @@ document.addEventListener("DOMContentLoaded", () => {
             navToastText.textContent = `Navigated to ${message.title || "new page"}. Re-planning...`;
             navToast.style.display = "flex";
 
-            // Debounce slightly to allow dynamic page content to settle
             setTimeout(async () => {
               try {
                 await handlePlan();
@@ -463,14 +743,14 @@ document.addEventListener("DOMContentLoaded", () => {
                   navToast.style.display = "none";
                 }, 2000);
               }
-            }, 500);
+            }, 600);
           }
         });
       }
     }
 
     if (message.action === "HIGHLIGHTED_ELEMENT_CLICKED") {
-      console.log("WebGPS: User clicked highlighted element #", message.element_id);
+      console.log("WebGPS: User interacted with element #", message.element_id);
     }
   });
 
@@ -496,6 +776,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   clearHighlightBtn.addEventListener("click", clearActiveHighlight);
 
-  // Initial status check
+  // Initialize
   checkBackendStatus();
 });

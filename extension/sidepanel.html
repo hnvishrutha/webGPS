@@ -33,23 +33,43 @@
     <span id="navToastText">Page changed. WebGPS is re-planning...</span>
   </div>
 
-  <!-- Safety & Security Banner -->
+  <!-- Safety & Security Banner with Evidence Drawer (Step 7) -->
   <section class="safety-banner safe" id="safetyBanner">
-    <div class="safety-icon" id="safetyIcon">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-      </svg>
+    <div class="safety-header">
+      <div class="safety-icon" id="safetyIcon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+      </div>
+      <div class="safety-content">
+        <div class="safety-title" id="safetyTitle">Official Domain Verified</div>
+        <div class="safety-desc" id="safetyDesc">Safe public service portal. Secrets protected.</div>
+      </div>
+      <button class="safety-evidence-btn" id="toggleEvidenceBtn" title="View safety evidence">Evidence &#x25BE;</button>
     </div>
-    <div class="safety-content">
-      <div class="safety-title" id="safetyTitle">Privacy Shield Active</div>
-      <div class="safety-desc" id="safetyDesc">Values are never read. Sensitive fields protected.</div>
+
+    <!-- Collapsible Deterministic Evidence Drawer -->
+    <div class="safety-evidence-drawer" id="safetyEvidenceDrawer" style="display: none;">
+      <div class="evidence-list" id="evidenceList">
+        <!-- Injected dynamically from /safety findings -->
+      </div>
     </div>
   </section>
 
-  <!-- Active AI Guidance & Step Callout Card (Step 4 & 5) -->
+  <!-- Active AI Guidance & Step Callout Card (Step 4, 5 & 8) -->
   <section class="active-guidance-card" id="activeGuidanceCard" style="display: none;">
     <div class="guidance-header">
-      <span class="guidance-badge" id="guidanceBadge">Element #0</span>
+      <div class="guidance-header-left">
+        <span class="guidance-badge" id="guidanceBadge">Element #0</span>
+        <!-- TTS Voice Readout Button (Step 8) -->
+        <button class="btn-tts" id="ttsBtn" title="Read step aloud with voice">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <span>Speak</span>
+        </button>
+      </div>
       <button class="btn-icon" id="clearHighlightBtn" title="Clear highlight on page">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -93,9 +113,78 @@
     </div>
   </section>
 
+  <!-- Voice Form-Filling Assistant Section (Step 6) -->
+  <section class="card voice-card" id="voiceSection">
+    <div class="section-header">
+      <span class="section-label">Voice Form-Filling</span>
+      <span class="voice-badge">Human Confirmed</span>
+    </div>
+    <p class="voice-description">Speak your details naturally. WebGPS maps speech to page fields and asks you to confirm before filling.</p>
+
+    <!-- Voice Control Buttons -->
+    <div class="voice-controls-row">
+      <button class="btn btn-mic" id="micBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+        <span id="micBtnLabel">Speak Details</span>
+      </button>
+
+      <button class="btn btn-demo-speech" id="demoSpeechBtn" title="Instant demo speech without microphone dependencies">
+        ⚡ Demo Voice Fill
+      </button>
+    </div>
+
+    <!-- Recording Indicator -->
+    <div class="recording-indicator" id="recordingIndicator" style="display: none;">
+      <span class="recording-pulse"></span>
+      <span id="recordingStatusText">Listening... Speak name, email, category...</span>
+    </div>
+
+    <!-- Utterance Transcript Box -->
+    <div class="transcript-box" id="transcriptBox" style="display: none;">
+      <span class="transcript-label">Transcribed Speech:</span>
+      <p class="transcript-text" id="transcriptText"></p>
+    </div>
+
+    <!-- Form Filling Confirmation Card (Step 6 Human-in-the-Loop) -->
+    <div class="confirmation-card" id="confirmationCard" style="display: none;">
+      <div class="confirmation-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+        <span class="confirmation-title">Review & Confirm Field Mapping</span>
+      </div>
+      <p class="confirmation-subtitle">WebGPS will fill only these non-sensitive fields upon your approval:</p>
+
+      <div class="assignments-table" id="assignmentsList">
+        <!-- Dynamic field rows with editable values -->
+      </div>
+
+      <div class="confirmation-actions">
+        <button class="btn btn-confirm" id="confirmFillBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Confirm & Fill Form</span>
+        </button>
+        <button class="btn btn-cancel" id="cancelFillBtn">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Success Fill Banner -->
+    <div class="fill-success-banner" id="fillSuccessBanner" style="display: none;">
+      <span>✅ Fields successfully inserted into the page. You stay in control: press Submit yourself.</span>
+    </div>
+  </section>
+
   <!-- Goal & Action Section -->
   <section class="card goal-card">
-    <label for="goalInput" class="section-label">Your Goal</label>
+    <label for="goalInput" class="section-label">Navigation Goal</label>
     <div class="goal-input-wrapper">
       <input
         type="text"
